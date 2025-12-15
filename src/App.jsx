@@ -8,17 +8,40 @@ import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb
 import './App.css';
 
 // --- CONFIGURATION ---
-const SHOW_ML_FEATURES = true; // Set to false to hide ML profile and show only score
+const SHOW_ML_FEATURES = false; // Set to false to hide ML profile and show only score
 
 // --- SHARED LAYOUT ---
 const Layout = ({ children, userName }) => (
   <div className="app-container">
     <header className="header">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-        <BookOpen size={24} color="white" />
-        <h1>University of Westminster | Research Portal</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{
+          background: 'var(--primary)',
+          padding: '6px',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <BookOpen size={20} color="white" />
+        </div>
+        <h1 style={{ lineHeight: 1.2 }}>
+          <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>University of Westminster</span>
+          Research Portal
+        </h1>
       </div>
-      {userName && <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>Student: {userName}</div>}
+      {userName && (
+        <div style={{
+          background: 'var(--bg-color)',
+          padding: '0.4rem 0.8rem',
+          borderRadius: '20px',
+          fontSize: '0.85rem',
+          color: 'var(--text-secondary)',
+          border: '1px solid var(--border-color)'
+        }}>
+          <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{userName}</span>
+        </div>
+      )}
     </header>
     <main className="content">
       <AnimatePresence mode='wait'>

@@ -15,18 +15,27 @@
 
 /* Header */
 .header {
-  background: var(--primary);
-  color: white;
-  padding: 1.5rem;
-  text-align: center;
+  background: var(--surface-color);
+  /* Changed from primary to surface for cleaner look */
+  color: var(--primary);
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Changed to space-between for better layout */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .header h1 {
-  color: white;
-  font-size: 1.25rem;
+  color: var(--primary);
+  font-size: 1.1rem;
   margin: 0;
-  font-weight: 500;
-  opacity: 0.9;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Content Area */
@@ -205,10 +214,14 @@
   padding: 2rem;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  /* Enable vertical scrolling */
 }
 
 .hint-sidebar.open {
   transform: translateX(0);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.15);
+  /* Stronger shadow when open */
 }
 
 .sidebar-overlay {
@@ -423,6 +436,10 @@
   .hint-sidebar {
     width: 100%;
     /* Full width on mobile */
+    padding: 1.5rem;
+    /* Slightly less padding to maximize space */
+    padding-bottom: 5rem;
+    /* Extra padding at bottom to avoid cut-off */
   }
 
   .options-grid {
