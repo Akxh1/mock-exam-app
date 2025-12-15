@@ -5,10 +5,12 @@
   background: var(--surface-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  /* overflow: hidden;  <-- REMOVED to allow scrolling */
   min-height: 500px;
   display: flex;
   flex-direction: column;
+  position: relative;
+  /* For sidebar positioning context if needed */
 }
 
 /* Header */
@@ -392,8 +394,13 @@
 @media (max-width: 768px) {
   .app-container {
     border-radius: 0;
-    height: 100vh;
+    min-height: 100vh;
+    /* Allow growing */
+    height: auto;
+    /* Allow growing */
     max-width: 100%;
+    box-shadow: none;
+    /* Remove shadow on full mobile screen */
   }
 
   .content {

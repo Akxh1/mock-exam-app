@@ -8,7 +8,7 @@ import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb
 import './App.css';
 
 // --- CONFIGURATION ---
-const SHOW_ML_FEATURES = false; // Set to false to hide ML profile and show only score
+const SHOW_ML_FEATURES = true; // Set to false to hide ML profile and show only score
 
 // --- SHARED LAYOUT ---
 const Layout = ({ children, userName }) => (

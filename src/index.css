@@ -15,10 +15,22 @@
 body {
   margin: 0;
   display: flex;
-  place-items: center;
+  align-items: flex-start;
+  /* Changed from place-items: center/justify-content: center to avoid clipping top */
+  justify-content: center;
   min-width: 320px;
   min-height: 100vh;
-  justify-content: center;
+  padding: 1rem;
+  /* Add some padding for desktop view around the card */
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  body {
+    padding: 0;
+    /* No padding on mobile, app takes full screen */
+    align-items: flex-start;
+  }
 }
 
 h1,
