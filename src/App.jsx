@@ -27,7 +27,7 @@ const Layout = ({ children, userName }) => (
         </div>
         <h1 style={{ lineHeight: 1.2 }}>
           <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>University of Westminster</span>
-          Research Portal
+          Research Study
         </h1>
       </div>
       {userName && (
