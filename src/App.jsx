@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import { getRandomQuestions } from './questions';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,7 +8,8 @@ import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb
 import './App.css';
 
 // --- CONFIGURATION ---
-const SHOW_ML_FEATURES = false; // Set to false to hide ML profile and show only score
+// --- CONFIGURATION ---
+// SHOW_ML_FEATURES is now dynamic state in App component
 
 // --- SHARED LAYOUT ---
 const Layout = ({ children, userName }) => (
@@ -160,11 +161,189 @@ const Home = () => {
           </button>
         </motion.div>
 
-        <motion.div className="consent-text" variants={itemVariants}>
-          <AlertCircle size={14} style={{ marginRight: '5px' }} />
-          By proceeding, you consent to the anonymous collection of interaction data (clicks, timing, hint usage) for research analysis.
+        <motion.div variants={itemVariants} className="consent-text">
+          <p>By clicking start, you consent to your interaction data being anonymously recorded for research purposes.</p>
+        </motion.div>
+
+        <motion.div variants={itemVariants} style={{ marginTop: '1rem', textAlign: 'center' }}>
+          <span
+            onClick={() => navigate('/admin')}
+            style={{ fontSize: '0.8rem', color: '#cbd5e1', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Researcher Access
+          </span>
         </motion.div>
       </motion.div>
+    </Layout>
+  );
+};
+
+// --- PAGE: ADMIN EXPORT ---
+const AdminPanel = ({ showFeatures, setShowFeatures }) => {
+  const [loading, setLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
+
+  // Pre-calculated SHA-256 hash 
+  const TARGET_HASH = "c2a73ff57426f8144bd6dd624d19026ec1020713737fd838558991b0dbab9850";
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+
+    // Hash the input password using Web Crypto API
+    const msgBuffer = new TextEncoder().encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (hashHex === TARGET_HASH) {
+      setIsAuthenticated(true);
+    } else {
+      alert("Incorrect Access Code");
+    }
+  };
+
+  const handleExport = async () => {
+    setLoading(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, "exam_submissions"));
+      let data = [];
+      querySnapshot.forEach((doc) => {
+        data.push(doc.data());
+      });
+
+      if (data.length === 0) {
+        alert("No data to export.");
+        setLoading(false);
+        return;
+      }
+
+      // 1. Get headers (keys from first object, sorted preferred)
+      // Ensure student_name and timestamp are first
+      const predefinedHeaders = [
+        "student_name", "timestamp", "score_percentage",
+        "avg_time_per_question", "avg_confidence", "tab_switches_rate",
+        "answer_changes_rate", "review_percentage", "avg_first_action_latency",
+        "clicks_per_question", "performance_trend", "hard_question_accuracy",
+        "hint_usage_percentage"
+      ];
+
+      // CSV Header Row
+      let csvContent = "data:text/csv;charset=utf-8," + predefinedHeaders.join(",") + "\n";
+
+      // CSV Rows
+      data.forEach(row => {
+        let rowString = predefinedHeaders.map(header => {
+          let val = row[header];
+          // Handle timestamp object from Firestore
+          if (header === 'timestamp' && val && val.seconds) {
+            return new Date(val.seconds * 1000).toISOString();
+          }
+          if (val === null || val === undefined) return "";
+          return JSON.stringify(val); // Escape commas/quotes
+        }).join(",");
+        csvContent += rowString + "\n";
+      });
+
+      // Trigger Download
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "student_research_data.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error("Export Error:", error);
+      alert("Failed to export data.");
+    }
+    setLoading(false);
+  };
+
+  const toggleFeatures = () => {
+    const newValue = !showFeatures;
+    setShowFeatures(newValue);
+    localStorage.setItem("SHOW_ML_FEATURES", JSON.stringify(newValue));
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <Layout>
+        <div className="card-glass" style={{ maxWidth: '400px', margin: '0 auto', textAlign: 'center' }}>
+          <h2 style={{ color: 'var(--primary)', marginBottom: '1.5rem' }}>Researcher Access</h2>
+          <form onSubmit={handleLogin}>
+            <div className="input-group" style={{ marginBottom: '1.5rem' }}>
+              <input
+                type="password"
+                placeholder="Enter Access Code"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ textAlign: 'center' }}
+              />
+            </div>
+            <button className="btn-primary" type="submit" style={{ width: '100%' }}>
+              Login
+            </button>
+          </form>
+          <div style={{ marginTop: '1.5rem' }}>
+            <a href="/" style={{ color: 'var(--primary)', fontSize: '0.9rem' }}>← Back to Home</a>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <div className="card-glass" style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <h2 style={{ color: 'var(--primary)', margin: 0 }}>Researcher Dashboard</h2>
+          <button onClick={() => setIsAuthenticated(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>Logout</button>
+        </div>
+
+        {/* SETTINGS SECTION */}
+        <div style={{ background: 'rgba(255,255,255,0.5)', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', border: '1px solid var(--border-color)' }}>
+          <h3 style={{ fontSize: '1rem', color: '#475569', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Configuration</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontWeight: 600, color: 'var(--primary)' }}>Show ML Features to Students</div>
+              <div style={{ fontSize: '0.85rem', color: '#64748b' }}>If disabled, students will only see their final score.</div>
+            </div>
+            <button
+              onClick={toggleFeatures}
+              style={{
+                background: showFeatures ? 'var(--green, #22c55e)' : '#cbd5e1',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '20px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'background 0.3s'
+              }}
+            >
+              {showFeatures ? "ENABLED" : "DISABLED"}
+            </button>
+          </div>
+        </div>
+
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+          Export aggregated student performance data for Google Sheets/Excel analysis.
+        </p>
+        <button
+          className="btn-primary"
+          onClick={handleExport}
+          disabled={loading}
+          style={{ background: 'var(--secondary)', width: '100%', display: 'flex', justifyContent: 'center', gap: '10px' }}
+        >
+          {loading ? <Clock size={20} className="spin" /> : <BookOpen size={20} />}
+          {loading ? "Exporting..." : "Download Data (CSV)"}
+        </button>
+        <div style={{ marginTop: '2rem' }}>
+          <a href="/" style={{ color: 'var(--primary)', fontSize: '0.9rem' }}>← Back to Home</a>
+        </div>
+      </div>
     </Layout>
   );
 };
@@ -197,6 +376,26 @@ const Exam = () => {
 
   useEffect(() => {
     setQuestions(getRandomQuestions(10));
+  }, []);
+
+  // --- SECURITY: PREVENT BACK NAVIGATION ---
+  useEffect(() => {
+    // Push a dummy state so there's something to "go back" to
+    window.history.pushState(null, document.title, window.location.href);
+
+    const handlePopState = (event) => {
+      // If user presses back, force reload to home (Forfeit)
+      // We use window.location.href to force a full reload and clear state
+      window.history.pushState(null, document.title, window.location.href);
+      if (window.confirm("Going back will forfeit your exam. Are you sure?")) {
+        window.location.href = '/';
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
   useEffect(() => {
@@ -239,7 +438,8 @@ const Exam = () => {
   };
 
   const handleNext = async () => {
-    if (!selectedOption) return alert("Please select an answer.");
+    // Allowed to skip questions now
+    // if (!selectedOption) return alert("Please select an answer.");
 
     const currentQ = questions[currentQIndex];
     const timeSpent = (Date.now() - startTimeRef.current) / 1000;
@@ -277,12 +477,19 @@ const Exam = () => {
     const sum = (field) => log.reduce((acc, curr) => acc + curr[field], 0);
     const mean = (field) => parseFloat((sum(field) / totalQ).toFixed(2));
 
-    // 9. Performance Trend (Last 5 accuracy - First 5 accuracy)
-    const firstHalf = log.slice(0, 5);
-    const secondHalf = log.slice(5, 10);
+    // 9. Performance Trend (Score 2nd Half - Score 1st Half -> Normalized by half length)
+    // Dynamic split based on length
+    const midpoint = Math.floor(totalQ / 2);
+    const firstHalf = log.slice(0, midpoint);
+    const secondHalf = log.slice(midpoint, totalQ);
+
     const scoreFirst = firstHalf.reduce((acc, q) => acc + q.is_correct, 0);
+    const accuracyFirst = scoreFirst / firstHalf.length;
+
     const scoreSecond = secondHalf.reduce((acc, q) => acc + q.is_correct, 0);
-    const trend = scoreSecond - scoreFirst; // Positive means improvement
+    const accuracySecond = scoreSecond / secondHalf.length;
+
+    const trend = parseFloat((accuracySecond - accuracyFirst).toFixed(2));
 
     // 10. Hard Question Accuracy (Difficulty > 1)
     const hardQuestions = log.filter(q => q.difficulty > 1);
@@ -290,17 +497,38 @@ const Exam = () => {
     const hardAccuracy = hardQuestions.length > 0 ? parseFloat((hardCorrect / hardQuestions.length).toFixed(2)) : 0;
 
     return {
-      final_score: sum('is_correct'),
+      // 1. Normalized Score (Percentage 0-100)
+      score_percentage: parseFloat(((sum('is_correct') / totalQ) * 100).toFixed(1)),
+
+      // 2. Avg Time per Question (Seconds)
       avg_time_per_question: mean('response_time'),
+
+      // 3. Avg Confidence (1-5)
       avg_confidence: mean('confidence_score'),
-      total_tab_switches: sum('tab_switches'),
-      total_answer_changes: sum('answer_changes'),
-      total_review_checks: sum('review_flag'),
+
+      // 4. Tab Switches Rate (Per Question)
+      tab_switches_rate: parseFloat((sum('tab_switches') / totalQ).toFixed(2)),
+
+      // 5. Answer Changes Rate (Per Question)
+      answer_changes_rate: parseFloat((sum('answer_changes') / totalQ).toFixed(2)),
+
+      // 6. Review Percentage (% of questions marked)
+      review_percentage: parseFloat(((sum('review_flag') / totalQ) * 100).toFixed(1)),
+
+      // 7. Processing Speed (Avg First Click Latency)
       avg_first_action_latency: mean('first_click_latency'),
-      total_clicks: sum('total_clicks'),
+
+      // 8. Interaction Intensity (Clicks Per Question)
+      clicks_per_question: parseFloat((sum('total_clicks') / totalQ).toFixed(1)),
+
+      // 9. Endurance Trend (-1.0 to 1.0)
       performance_trend: trend,
-      hard_question_accuracy: hardAccuracy,
-      total_hints_used: hintsViewed.size // Feature 11
+
+      // 10. Advanced Mastery (Percentage 0-100)
+      hard_question_accuracy: parseFloat((hardAccuracy * 100).toFixed(1)),
+
+      // 11. Hint Usage Percentage (% of questions with hints used)
+      hint_usage_percentage: parseFloat(((hintsViewed.size / totalQ) * 100).toFixed(1))
     };
   };
 
@@ -413,15 +641,20 @@ const Exam = () => {
             />
           </div>
 
-          <label className="review-label">
-            <input
-              type="checkbox"
-              style={{ width: '16px', height: '16px' }}
-              checked={markedForReview}
-              onChange={(e) => setMarkedForReview(e.target.checked)}
-            />
-            Mark for Review
-          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', maxWidth: '250px' }}>
+            <label className="review-label" style={{ marginBottom: '4px' }}>
+              <input
+                type="checkbox"
+                style={{ width: '16px', height: '16px' }}
+                checked={markedForReview}
+                onChange={(e) => setMarkedForReview(e.target.checked)}
+              />
+              Mark for Review
+            </label>
+            <div style={{ fontSize: '0.65rem', color: '#94a3b8', lineHeight: '1.2' }}>
+              <span style={{ fontWeight: 'bold', color: 'var(--secondary)' }}>Tip:</span> If you are unsure, mark this instead of guessing randomly. This helps accurate analysis.
+            </div>
+          </div>
 
           <button className="btn-primary" onClick={handleNext}>
             {currentQIndex === 9 ? "Submit" : "Next"}
@@ -433,24 +666,24 @@ const Exam = () => {
 };
 
 // --- PAGE 3: RESULTS ---
-const Results = () => {
+const Results = ({ showFeatures }) => {
   const { state } = useLocation();
   if (!state) return <Layout>No results found.</Layout>;
 
   const { features } = state;
 
   const featureExplanations = [
-    { label: "Final Score", value: features.final_score + "/10", desc: "Total correct answers." },
-    { label: "Avg. Time / Question", value: features.avg_time_per_question + "s", desc: "Average time spent before submitting." },
-    { label: "Self-Reported Confidence", value: features.avg_confidence + "/5", desc: "Average confidence level selected." },
-    { label: "Focus (Tab Switches)", value: features.total_tab_switches, desc: "Times the exam tab lost focus." },
-    { label: "Answer Changes", value: features.total_answer_changes, desc: "Times you switched your selected answer." },
-    { label: "Metacognition (Reviews)", value: features.total_review_checks, desc: "Questions marked for review." },
-    { label: "Processing Speed", value: features.avg_first_action_latency + "s", desc: "Avg time before first interaction (click)." },
-    { label: "Interaction Cost", value: features.total_clicks, desc: "Total clicks on the page." },
-    { label: "Endurance (Trend)", value: features.performance_trend > 0 ? "+" + features.performance_trend : features.performance_trend, desc: "Score difference (Last 5 - First 5)." },
-    { label: "Advanced Mastery", value: (features.hard_question_accuracy * 100) + "%", desc: "Accuracy on Hard/Medium questions." },
-    { label: "Hints Used", value: features.total_hints_used, desc: "Total hints accessed during exam." }
+    { label: "Score %", value: features.score_percentage + "%", desc: "Percentage of correct answers." },
+    { label: "Avg. Time / Question", value: features.avg_time_per_question + "s", desc: "Mean time spent per item." },
+    { label: "Confidence", value: features.avg_confidence + "/5", desc: "Mean self-reported confidence." },
+    { label: "Focus Rate", value: features.tab_switches_rate, desc: "Avg tab switches per question." },
+    { label: "Uncertainty Rate", value: features.answer_changes_rate, desc: "Avg answer changes per question." },
+    { label: "Review %", value: features.review_percentage + "%", desc: "% of questions marked for review." },
+    { label: "Processing Speed", value: features.avg_first_action_latency + "s", desc: "Mean latency to first interaction." },
+    { label: "Interaction Intensity", value: features.clicks_per_question, desc: "Avg clicks per question." },
+    { label: "Endurance Trend", value: features.performance_trend > 0 ? "+" + features.performance_trend : features.performance_trend, desc: "Accuracy Change (2nd Half - 1st Half)." },
+    { label: "Advanced Mastery", value: features.hard_question_accuracy + "%", desc: "% Correct on Difficulty > 1." },
+    { label: "Scaffolding Use", value: features.hint_usage_percentage + "%", desc: "% of questions where hint was used." }
   ];
 
   return (
@@ -464,12 +697,12 @@ const Results = () => {
           <CheckCircle size={64} color="var(--green, #22c55e)" style={{ marginBottom: '1rem' }} />
           <h1>Submission Complete</h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            Thank you, {state.name || "Student"}. {SHOW_ML_FEATURES ? "Here is your ML Feature Profile." : "Assessment recorded."}
+            Thank you, {state.name || "Student"}. {showFeatures ? "Here is your ML Feature Profile." : "Assessment recorded."}
           </p>
         </div>
 
         {/* CONDITIONALLY RENDER FEATURES */}
-        {SHOW_ML_FEATURES ? (
+        {showFeatures ? (
           <>
             <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
               Extracted Features (Input for ML Model)
@@ -493,7 +726,7 @@ const Results = () => {
           </>
         ) : (
           <div style={{ textAlign: 'center', margin: '3rem 0' }}>
-            <h2 style={{ fontSize: '2.5rem', color: 'var(--primary)' }}>Score: {features.final_score} / 10</h2>
+            <h2 style={{ fontSize: '2.5rem', color: 'var(--primary)' }}>Score: {features.score_percentage}%</h2>
             <p style={{ color: 'var(--text-secondary)' }}>Your performance data has been securely saved for analysis.</p>
           </div>
         )}
@@ -510,16 +743,23 @@ const Results = () => {
   );
 };
 
-function App() {
+const App = () => {
+  // Initialize State from LocalStorage (default to true if not found)
+  const [showFeatures, setShowFeatures] = useState(() => {
+    const saved = localStorage.getItem("SHOW_ML_FEATURES");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/exam" element={<Exam />} />
-        <Route path="/results" element={<Results />} />
+        <Route path="/results" element={<Results showFeatures={showFeatures} />} />
+        <Route path="/admin" element={<AdminPanel showFeatures={showFeatures} setShowFeatures={setShowFeatures} />} />
       </Routes>
     </Router>
   );
-}
+};
 
 export default App;
