@@ -118,8 +118,7 @@ const Home = () => {
           <h3 className="hero-subtitle">University of Westminster Research Study</h3>
 
           <p className="hero-description">
-            Welcome to this interactive assessment designed to analyze student learning patterns
-            and the effectiveness of AI-driven scaffolding in foundational computing mathematics.
+            This assessment platform collects student exam response data to support the development of a machine learning model for learning level classification, contributing to ongoing research in adaptive educational scaffolding.
           </p>
 
           <div className="info-grid">
@@ -140,7 +139,7 @@ const Home = () => {
             <div className="info-item">
               <Lightbulb className="info-icon" size={20} />
               <div>
-                <strong>Adaptive Hints</strong>
+                <strong>Static Hints</strong>
                 <span>Available on demand</span>
               </div>
             </div>
