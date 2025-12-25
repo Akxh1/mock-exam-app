@@ -743,10 +743,10 @@ const Results = ({ showFeatures }) => {
 };
 
 const App = () => {
-  // Initialize State from LocalStorage (default to true if not found)
+  // Initialize State from LocalStorage (default to false if not found)
   const [showFeatures, setShowFeatures] = useState(() => {
     const saved = localStorage.getItem("SHOW_ML_FEATURES");
-    return saved !== null ? JSON.parse(saved) : true;
+    return saved !== null ? JSON.parse(saved) : false;
   });
 
   return (
