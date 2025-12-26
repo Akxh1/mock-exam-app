@@ -118,7 +118,7 @@ const Home = () => {
           <h3 className="hero-subtitle">University of Westminster Research Study</h3>
 
           <p className="hero-description">
-            This assessment covers <strong>Foundational Mathematics for Computing</strong>, including topics such as Sets, Logic, Binary Systems, Matrices, Graph Theory, Combinatorics, and Probability. Your response data will support the development of a machine learning model for learning level classification, contributing to research in adaptive educational scaffolding.
+            This assessment covers <strong>Foundational Mathematics for Computing</strong>. Your response data will support the development of a machine learning model for learning level classification, contributing to research in adaptive educational scaffolding.
           </p>
 
           <div className="info-grid">
