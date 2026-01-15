@@ -183,6 +183,12 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
 
+  // Student Performance Data states
+  const [showStudentData, setShowStudentData] = useState(false);
+  const [studentData, setStudentData] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+
   // Pre-calculated SHA-256 hash 
   const TARGET_HASH = "c2a73ff57426f8144bd6dd624d19026ec1020713737fd838558991b0dbab9850";
 
@@ -200,6 +206,29 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
     } else {
       alert("Incorrect Access Code");
     }
+  };
+
+  const fetchStudentData = async () => {
+    setLoadingStudents(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, "exam_submissions"));
+      let data = [];
+      querySnapshot.forEach((doc) => {
+        data.push({ id: doc.id, ...doc.data() });
+      });
+      // Sort by timestamp (most recent first)
+      data.sort((a, b) => {
+        const timeA = a.timestamp?.seconds || 0;
+        const timeB = b.timestamp?.seconds || 0;
+        return timeB - timeA;
+      });
+      setStudentData(data);
+      setShowStudentData(true);
+    } catch (error) {
+      console.error("Fetch Error:", error);
+      alert("Failed to fetch student data.");
+    }
+    setLoadingStudents(false);
   };
 
   const handleExport = async () => {
@@ -266,6 +295,31 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
     localStorage.setItem("SHOW_ML_FEATURES", JSON.stringify(newValue));
   };
 
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp || !timestamp.seconds) return "N/A";
+    return new Date(timestamp.seconds * 1000).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const featureLabels = [
+    { key: "score_percentage", label: "Score %", suffix: "%" },
+    { key: "avg_time_per_question", label: "Avg. Time / Question", suffix: "s" },
+    { key: "avg_confidence", label: "Confidence", suffix: "/5" },
+    { key: "tab_switches_rate", label: "Focus Rate (Tab Switches)", suffix: "" },
+    { key: "answer_changes_rate", label: "Uncertainty Rate (Answer Changes)", suffix: "" },
+    { key: "review_percentage", label: "Review %", suffix: "%" },
+    { key: "avg_first_action_latency", label: "Processing Speed (First Click)", suffix: "s" },
+    { key: "clicks_per_question", label: "Interaction Intensity (Clicks)", suffix: "" },
+    { key: "performance_trend", label: "Endurance Trend", suffix: "" },
+    { key: "hard_question_accuracy", label: "Advanced Mastery (Hard Q)", suffix: "%" },
+    { key: "hint_usage_percentage", label: "Scaffolding Use (Hints)", suffix: "%" }
+  ];
+
   if (!isAuthenticated) {
     return (
       <Layout>
@@ -288,6 +342,197 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
           <div style={{ marginTop: '1.5rem' }}>
             <a href="/" style={{ color: 'var(--primary)', fontSize: '0.9rem' }}>← Back to Home</a>
           </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Student Profile Modal
+  if (selectedStudent) {
+    return (
+      <Layout>
+        <motion.div
+          className="card-glass"
+          style={{ maxWidth: '700px', margin: '0 auto' }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <div>
+              <h2 style={{ color: 'var(--primary)', margin: 0 }}>{selectedStudent.student_name}</h2>
+              <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0.3rem 0 0 0' }}>
+                Submitted: {formatTimestamp(selectedStudent.timestamp)}
+              </p>
+            </div>
+            <button
+              onClick={() => setSelectedStudent(null)}
+              style={{
+                background: 'var(--primary)',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <X size={16} /> Close
+            </button>
+          </div>
+
+          <div style={{
+            background: 'linear-gradient(135deg, var(--primary) 0%, #6366f1 100%)',
+            padding: '1.5rem',
+            borderRadius: '12px',
+            color: 'white',
+            textAlign: 'center',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{ fontSize: '3rem', fontWeight: 'bold' }}>{selectedStudent.score_percentage}%</div>
+            <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>Overall Score</div>
+          </div>
+
+          <h3 style={{
+            fontSize: '1rem',
+            color: '#475569',
+            marginBottom: '1rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            borderBottom: '1px solid var(--border-color)',
+            paddingBottom: '0.5rem'
+          }}>
+            ML Feature Profile
+          </h3>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
+            {featureLabels.slice(1).map((feature, idx) => (
+              <div
+                key={idx}
+                style={{
+                  background: 'rgba(255,255,255,0.6)',
+                  padding: '0.8rem',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                  {feature.label}
+                </div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--primary)', marginTop: '0.2rem' }}>
+                  {feature.key === 'performance_trend' && selectedStudent[feature.key] > 0 ? '+' : ''}
+                  {selectedStudent[feature.key]}{feature.suffix}
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      </Layout>
+    );
+  }
+
+  // Student Data Table View
+  if (showStudentData) {
+    return (
+      <Layout>
+        <div className="card-glass" style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h2 style={{ color: 'var(--primary)', margin: 0 }}>Student Performance Data</h2>
+            <button
+              onClick={() => setShowStudentData(false)}
+              style={{
+                background: 'none',
+                border: '1px solid var(--border-color)',
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                color: '#64748b'
+              }}
+            >
+              ← Back to Dashboard
+            </button>
+          </div>
+
+          <p style={{ color: '#64748b', marginBottom: '1rem', fontSize: '0.9rem' }}>
+            Click on a student name to view their complete ML feature profile. Total: <strong>{studentData.length}</strong> submissions.
+          </p>
+
+          {studentData.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+              <AlertCircle size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+              <p>No student submissions found.</p>
+            </div>
+          ) : (
+            <div style={{
+              maxHeight: '500px',
+              overflowY: 'auto',
+              border: '1px solid var(--border-color)',
+              borderRadius: '12px'
+            }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.9rem'
+              }}>
+                <thead>
+                  <tr style={{
+                    background: 'var(--primary)',
+                    color: 'white',
+                    position: 'sticky',
+                    top: 0
+                  }}>
+                    <th style={{ padding: '1rem', textAlign: 'left', fontWeight: 600 }}>#</th>
+                    <th style={{ padding: '1rem', textAlign: 'left', fontWeight: 600 }}>Student Name</th>
+                    <th style={{ padding: '1rem', textAlign: 'center', fontWeight: 600 }}>Score</th>
+                    <th style={{ padding: '1rem', textAlign: 'right', fontWeight: 600 }}>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentData.map((student, idx) => (
+                    <tr
+                      key={student.id}
+                      style={{
+                        background: idx % 2 === 0 ? 'rgba(255,255,255,0.5)' : 'rgba(241,245,249,0.5)',
+                        transition: 'background 0.2s',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setSelectedStudent(student)}
+                      onMouseOver={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                      onMouseOut={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'rgba(255,255,255,0.5)' : 'rgba(241,245,249,0.5)'}
+                    >
+                      <td style={{ padding: '0.8rem 1rem', color: '#64748b' }}>{idx + 1}</td>
+                      <td style={{ padding: '0.8rem 1rem' }}>
+                        <span style={{
+                          color: 'var(--primary)',
+                          fontWeight: 600,
+                          textDecoration: 'underline',
+                          cursor: 'pointer'
+                        }}>
+                          {student.student_name}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.8rem 1rem', textAlign: 'center' }}>
+                        <span style={{
+                          background: student.score_percentage >= 70 ? '#22c55e' : student.score_percentage >= 40 ? '#f59e0b' : '#ef4444',
+                          color: 'white',
+                          padding: '0.3rem 0.8rem',
+                          borderRadius: '20px',
+                          fontWeight: 600,
+                          fontSize: '0.85rem'
+                        }}>
+                          {student.score_percentage}%
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.8rem 1rem', textAlign: 'right', color: '#64748b', fontSize: '0.85rem' }}>
+                        {formatTimestamp(student.timestamp)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </Layout>
     );
@@ -327,19 +572,38 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
           </div>
         </div>
 
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-          Export aggregated student performance data for Google Sheets/Excel analysis.
-        </p>
-        <button
-          className="btn-primary"
-          onClick={handleExport}
-          disabled={loading}
-          style={{ background: 'var(--secondary)', width: '100%', display: 'flex', justifyContent: 'center', gap: '10px' }}
-        >
-          {loading ? <Clock size={20} className="spin" /> : <BookOpen size={20} />}
-          {loading ? "Exporting..." : "Download Data (CSV)"}
-        </button>
-        <div style={{ marginTop: '2rem' }}>
+        {/* DATA ACTIONS SECTION */}
+        <div style={{ background: 'rgba(255,255,255,0.5)', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', border: '1px solid var(--border-color)' }}>
+          <h3 style={{ fontSize: '1rem', color: '#475569', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Data Management</h3>
+
+          <button
+            className="btn-primary"
+            onClick={fetchStudentData}
+            disabled={loadingStudents}
+            style={{
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '10px',
+              marginBottom: '1rem'
+            }}
+          >
+            {loadingStudents ? <Clock size={20} className="spin" /> : <Brain size={20} />}
+            {loadingStudents ? "Loading..." : "View Student Performance Data"}
+          </button>
+
+          <button
+            className="btn-primary"
+            onClick={handleExport}
+            disabled={loading}
+            style={{ background: 'var(--secondary)', width: '100%', display: 'flex', justifyContent: 'center', gap: '10px' }}
+          >
+            {loading ? <Clock size={20} className="spin" /> : <BookOpen size={20} />}
+            {loading ? "Exporting..." : "Download Data (CSV)"}
+          </button>
+        </div>
+
+        <div style={{ marginTop: '1rem' }}>
           <a href="/" style={{ color: 'var(--primary)', fontSize: '0.9rem' }}>← Back to Home</a>
         </div>
       </div>
