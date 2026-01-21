@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Research files (personal use only)
+citations_*.csv
+student_eda_synthetic_data.py
+*.ipynb
+real_data_with_predictions.csv
+synthetic_training_data.csv
+combined_training_data.csv
+student_research_data.csv
+PROJECT_GOALS.md
+Performance_Prediction_Validation.md
