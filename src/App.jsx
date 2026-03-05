@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
@@ -6,6 +6,7 @@ import { getRandomQuestions, questionBank } from './questions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb, X, FlaskConical, ClipboardList, Target, Loader2, ArrowLeft, Star } from 'lucide-react';
 import './App.css';
+import * as XLSX from 'xlsx';
 
 // --- CONFIGURATION ---
 // --- CONFIGURATION ---
@@ -258,6 +259,12 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
 
+  // Evaluation Responses states
+  const [showEvalData, setShowEvalData] = useState(false);
+  const [evalData, setEvalData] = useState([]);
+  const [loadingEvals, setLoadingEvals] = useState(false);
+  const [selectedEval, setSelectedEval] = useState(null);
+
   // Pre-calculated SHA-256 hash 
   const TARGET_HASH = "c2a73ff57426f8144bd6dd624d19026ec1020713737fd838558991b0dbab9850";
 
@@ -373,6 +380,73 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Fetch evaluation responses from Firebase
+  const fetchEvalData = async () => {
+    setLoadingEvals(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, 'evaluation_responses'));
+      let data = [];
+      querySnapshot.forEach((doc) => {
+        data.push({ id: doc.id, ...doc.data() });
+      });
+      data.sort((a, b) => {
+        const timeA = a.timestamp?.seconds || 0;
+        const timeB = b.timestamp?.seconds || 0;
+        return timeB - timeA;
+      });
+      setEvalData(data);
+      setShowEvalData(true);
+    } catch (error) {
+      console.error('Fetch Eval Error:', error);
+      alert('Failed to fetch evaluation responses.');
+    }
+    setLoadingEvals(false);
+  };
+
+  // Export evaluations to Excel
+  const handleExportEvals = async () => {
+    let data = evalData;
+    if (data.length === 0) {
+      // Fetch first if not loaded
+      try {
+        const querySnapshot = await getDocs(collection(db, 'evaluation_responses'));
+        querySnapshot.forEach((doc) => {
+          data.push({ id: doc.id, ...doc.data() });
+        });
+      } catch (error) {
+        console.error('Export Eval Error:', error);
+        alert('Failed to fetch evaluation data.');
+        return;
+      }
+    }
+    if (data.length === 0) { alert('No evaluation data to export.'); return; }
+
+    const rows = data.map(d => ({
+      'Evaluator Name': d.evaluator_name || '',
+      'Role': d.evaluator_role || '',
+      'Institution': d.evaluator_institution || '',
+      'Experience': d.evaluator_experience || '',
+      'Tests Tried': Array.isArray(d.tests_tried) ? d.tests_tried.join(', ') : '',
+      'Participant': d.participant_name || '',
+      'Submitted': d.timestamp?.seconds ? new Date(d.timestamp.seconds * 1000).toISOString() : '',
+      'Q1 - Key Differences': d.q1_key_differences || '',
+      'Q2 - Better Support': d.q2_which_better_supports || '',
+      'Q3 - Level Limitations': d.q3_level_limitations || '',
+      'Q4 - Feature Reliability': d.q4_feature_reliability || '',
+      'Q5 - LMS Formula': d.q5_lms_formula_opinion || '',
+      'Q6 - ML Validity': d.q6_ml_validity || '',
+      'Q7 - Predict Explain Act': d.q7_predict_explain_act || '',
+      'Q8 - Practical/Ethical': d.q8_practical_ethical || '',
+      'Q9 - Improvements': d.q9_improvements || '',
+      'Q10 - Additional Comments': d.q10_additional_comments || '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Evaluation Responses');
+    XLSX.writeFile(wb, 'evaluation_responses.xlsx');
   };
 
   const featureLabels = [
@@ -691,6 +765,105 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
     );
   }
 
+  // Evaluation Responses View
+  if (showEvalData) {
+    return (
+      <Layout>
+        <div className="card-glass" style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h2 style={{ color: 'var(--primary)', margin: 0 }}>Evaluation Responses ({evalData.length})</h2>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={handleExportEvals}
+                style={{ background: '#16a34a', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+              >
+                <BookOpen size={16} /> Export Excel
+              </button>
+              <button
+                onClick={() => { setShowEvalData(false); setSelectedEval(null); }}
+                style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <ArrowLeft size={16} /> Back
+              </button>
+            </div>
+          </div>
+
+          {selectedEval ? (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <button onClick={() => setSelectedEval(null)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem' }}>
+                <ArrowLeft size={14} /> Back to list
+              </button>
+              <div style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+                  <div><strong>Name:</strong> {selectedEval.evaluator_name}</div>
+                  <div><strong>Role:</strong> {selectedEval.evaluator_role}</div>
+                  <div><strong>Institution:</strong> {selectedEval.evaluator_institution || 'N/A'}</div>
+                  <div><strong>Experience:</strong> {selectedEval.evaluator_experience || 'N/A'}</div>
+                  <div><strong>Tests Tried:</strong> {Array.isArray(selectedEval.tests_tried) ? selectedEval.tests_tried.join(', ') : 'N/A'}</div>
+                  <div><strong>Submitted:</strong> {formatTimestamp(selectedEval.timestamp)}</div>
+                </div>
+                {[
+                  { key: 'q1_key_differences', label: 'Q1. Key Differences' },
+                  { key: 'q2_which_better_supports', label: 'Q2. Better Support' },
+                  { key: 'q3_level_limitations', label: 'Q3. Level Limitations' },
+                  { key: 'q4_feature_reliability', label: 'Q4. Feature Reliability' },
+                  { key: 'q5_lms_formula_opinion', label: 'Q5. LMS Formula' },
+                  { key: 'q6_ml_validity', label: 'Q6. ML Validity' },
+                  { key: 'q7_predict_explain_act', label: 'Q7. Predict-Explain-Act' },
+                  { key: 'q8_practical_ethical', label: 'Q8. Practical/Ethical' },
+                  { key: 'q9_improvements', label: 'Q9. Improvements' },
+                  { key: 'q10_additional_comments', label: 'Q10. Additional Comments' },
+                ].map(q => (
+                  <div key={q.key} style={{ marginBottom: '1rem' }}>
+                    <div style={{ fontWeight: 600, color: '#334155', marginBottom: '0.3rem', fontSize: '0.85rem' }}>{q.label}</div>
+                    <div style={{ background: 'white', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.9rem', color: '#475569', whiteSpace: 'pre-wrap' }}>
+                      {selectedEval[q.key] || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No response</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              {evalData.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>No evaluation responses found.</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                      <th style={{ padding: '0.8rem', textAlign: 'left', fontWeight: 600 }}>#</th>
+                      <th style={{ padding: '0.8rem', textAlign: 'left', fontWeight: 600 }}>Evaluator</th>
+                      <th style={{ padding: '0.8rem', textAlign: 'left', fontWeight: 600 }}>Role</th>
+                      <th style={{ padding: '0.8rem', textAlign: 'left', fontWeight: 600 }}>Tests</th>
+                      <th style={{ padding: '0.8rem', textAlign: 'right', fontWeight: 600 }}>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evalData.map((ev, idx) => (
+                      <tr
+                        key={ev.id}
+                        style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background 0.2s' }}
+                        onClick={() => setSelectedEval(ev)}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99,102,241,0.05)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '0.8rem', color: '#64748b' }}>{idx + 1}</td>
+                        <td style={{ padding: '0.8rem', fontWeight: 500 }}>{ev.evaluator_name}</td>
+                        <td style={{ padding: '0.8rem', color: '#64748b' }}>{ev.evaluator_role}</td>
+                        <td style={{ padding: '0.8rem', color: '#64748b' }}>{Array.isArray(ev.tests_tried) ? ev.tests_tried.join(', ') : ''}</td>
+                        <td style={{ padding: '0.8rem', textAlign: 'right', color: '#64748b', fontSize: '0.85rem' }}>{formatTimestamp(ev.timestamp)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="card-glass" style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
@@ -749,10 +922,31 @@ const AdminPanel = ({ showFeatures, setShowFeatures }) => {
             className="btn-primary"
             onClick={handleExport}
             disabled={loading}
-            style={{ background: 'var(--secondary)', width: '100%', display: 'flex', justifyContent: 'center', gap: '10px' }}
+            style={{ background: 'var(--secondary)', width: '100%', display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '1rem' }}
           >
             {loading ? <Clock size={20} className="spin" /> : <BookOpen size={20} />}
-            {loading ? "Exporting..." : "Download Data (CSV)"}
+            {loading ? "Exporting..." : "Download Student Data (CSV)"}
+          </button>
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '1rem 0' }} />
+          <h4 style={{ fontSize: '0.9rem', color: '#475569', marginBottom: '0.75rem' }}>Evaluation Responses</h4>
+
+          <button
+            className="btn-primary"
+            onClick={fetchEvalData}
+            disabled={loadingEvals}
+            style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '1rem', background: '#7c3aed' }}
+          >
+            {loadingEvals ? <Clock size={20} className="spin" /> : <ClipboardList size={20} />}
+            {loadingEvals ? "Loading..." : "View Evaluation Responses"}
+          </button>
+
+          <button
+            className="btn-primary"
+            onClick={handleExportEvals}
+            style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '10px', background: '#16a34a' }}
+          >
+            <BookOpen size={20} /> Download Evaluations (Excel)
           </button>
         </div>
 
@@ -1220,16 +1414,16 @@ Generate the one-liner hint now:`;
 
 const generateAdaptiveHint = async (questionText, level) => {
   const levelInstructions = {
-    L1: `You are an expert Socratic tutor. The student is PROFICIENT — they understand core concepts well.
+    L1: `You are an expert Socratic tutor. The student is PROFICIENT - they understand core concepts well.
 
 === ADAPTIVE SCAFFOLDING: LEVEL 1 (Socratic/Minimal) ===
 - Ask ONE thought-provoking question that guides their thinking
-- Do NOT explain the concept — trust their ability to reason
+- Do NOT explain the concept - trust their ability to reason
 - Reference the specific mathematical/logical principle involved
 - Keep it under 40 words
 - Tone: Challenging, respectful, like a peer discussion`,
 
-    L2: `You are a supportive, structured tutor. The student is DEVELOPING — they have partial understanding.
+    L2: `You are a supportive, structured tutor. The student is DEVELOPING - they have partial understanding.
 
 === ADAPTIVE SCAFFOLDING: LEVEL 2 (Structured Nudge) ===
 - Give ONE key concept reminder relevant to this question
@@ -1238,7 +1432,7 @@ const generateAdaptiveHint = async (questionText, level) => {
 - Keep it under 80 words
 - Tone: Supportive, clear, structured`,
 
-    L3: `You are an empathetic, patient tutor. The student is STRUGGLING — they need significant support.
+    L3: `You are an empathetic, patient tutor. The student is STRUGGLING - they need significant support.
 
 === ADAPTIVE SCAFFOLDING: LEVEL 3 (Step-by-Step) ===
 - Start with a brief encouraging statement
@@ -1246,7 +1440,7 @@ const generateAdaptiveHint = async (questionText, level) => {
 - Give step-by-step guidance toward understanding (not just the answer)
 - Explain the underlying concept in simple terms
 - Keep it under 150 words
-- Tone: Warm, encouraging, patient — like a mentor`
+- Tone: Warm, encouraging, patient - like a mentor`
   };
 
   const prompt = `${levelInstructions[level]}
@@ -1302,7 +1496,7 @@ const ABTestHub = () => {
             <label style={{ fontSize: '0.85rem' }}>Participant Name / Identifier</label>
             <input
               type="text"
-              placeholder="Optional — Enter your name"
+              placeholder="Optional - Enter your name"
               value={participantName}
               onChange={(e) => setParticipantName(e.target.value)}
               style={{ textAlign: 'center' }}
@@ -1316,7 +1510,7 @@ const ABTestHub = () => {
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📝</div>
               <h3 style={{ color: '#1d4ed8' }}>TEST A</h3>
               <p style={{ fontWeight: 600, color: '#3b82f6', marginBottom: '0.5rem' }}>Generic AI Hints</p>
-              <p>Standard one-size-fits-all hints — typical LMS experience</p>
+              <p>Standard one-size-fits-all hints - typical LMS experience</p>
               <motion.button
                 className="btn-primary"
                 style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', width: '100%' }}
@@ -1499,13 +1693,13 @@ const TestAExam = () => {
         <div className="card-glass" style={{ padding: '2rem' }}>
           {/* Test A Banner */}
           <div className="test-banner test-banner-a">
-            TEST A — Generic Hints
+            TEST A - Generic Hints
           </div>
 
           {/* Info Notice */}
           <div className="consent-notice" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
-            <span>You <strong>do not</strong> need to answer the questions. Focus on <strong>requesting and comparing the hints</strong> — that's what matters for this evaluation.</span>
+            <span>You <strong>do not</strong> need to answer the questions. Focus on <strong>requesting and comparing the hints</strong> - that's what matters for this evaluation.</span>
           </div>
 
           {/* Progress */}
@@ -1636,7 +1830,7 @@ const TestBExam = () => {
   const hintOpenTimeRef = useRef(null);
 
   const levels = [
-    { id: 'L1', label: 'Proficient', style: 'Socratic', color: '#22c55e', description: 'Minimal Socratic prompts — you\'ll receive thought-provoking questions' },
+    { id: 'L1', label: 'Proficient', style: 'Socratic', color: '#22c55e', description: 'Minimal Socratic prompts - you\'ll receive thought-provoking questions' },
     { id: 'L2', label: 'Developing', style: 'Structured', color: '#f59e0b', description: 'Structured nudges with concept reminders and common pitfalls' },
     { id: 'L3', label: 'Struggling', style: 'Guided', color: '#ef4444', description: 'Step-by-step guidance with analogies and encouragement' }
   ];
@@ -1774,7 +1968,7 @@ const TestBExam = () => {
                 >
                   <div className="level-badge" style={{ background: level.color }}>{level.id}</div>
                   <div className="level-info">
-                    <h4 style={{ color: level.color }}>{level.id} — {level.label} ({level.style})</h4>
+                    <h4 style={{ color: level.color }}>{level.id} - {level.label} ({level.style})</h4>
                     <p>{level.description}</p>
                   </div>
                 </motion.div>
@@ -1821,13 +2015,13 @@ const TestBExam = () => {
         <div className="card-glass" style={{ padding: '2rem' }}>
           {/* Test B Banner */}
           <div className="test-banner test-banner-b">
-            TEST B — Adaptive Scaffolding ({currentLevel?.id} {currentLevel?.label})
+            TEST B - Adaptive Scaffolding ({currentLevel?.id} {currentLevel?.label})
           </div>
 
           {/* Info Notice */}
           <div className="consent-notice" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
-            <span>You <strong>do not</strong> need to answer the questions. Focus on <strong>requesting and comparing the hints</strong> — observe how this level's scaffolding approach differs.</span>
+            <span>You <strong>do not</strong> need to answer the questions. Focus on <strong>requesting and comparing the hints</strong> - observe how this level's scaffolding approach differs.</span>
           </div>
 
           {/* Progress */}
@@ -1837,7 +2031,7 @@ const TestBExam = () => {
           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
             <span>Question {currentQIndex + 1} of {questions.length}</span>
             <span className="hint-level-badge" style={{ background: currentLevel?.color }}>
-              {currentLevel?.id} — {currentLevel?.style}
+              {currentLevel?.id} - {currentLevel?.style}
             </span>
           </div>
 
@@ -1890,7 +2084,7 @@ const TestBExam = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
                   <span className="hint-level-badge" style={{ background: currentLevel?.color, margin: 0 }}>
                     {currentLevel?.id === 'L1' ? '🟢' : currentLevel?.id === 'L2' ? '🟠' : '🔴'}
-                    {' '}{currentLevel?.id} — {currentLevel?.style}
+                    {' '}{currentLevel?.id} - {currentLevel?.style}
                   </span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                     Mastery: {currentLevel?.label}
@@ -1993,7 +2187,7 @@ const TestComplete = () => {
           <h2 style={{ color: 'var(--primary)', marginBottom: '0.5rem' }}>Test Complete!</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
             You've completed <strong>Test {testType}</strong>
-            {level ? ` — Level ${level}` : ''}.
+            {level ? ` - Level ${level}` : ''}.
             <br />Thank you for your participation!
           </p>
 
@@ -2121,10 +2315,10 @@ const EvaluationForm = () => {
             <h2 style={{ margin: 0, color: 'var(--primary)' }}>Expert / Stakeholder Evaluation</h2>
           </div>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '0.75rem', fontSize: '0.9rem', lineHeight: 1.6 }}>
-            Please answer these questions after experiencing both Test A and Test B. Speak freely — there are no right or wrong answers.
+            Please answer these questions after experiencing both Test A and Test B.
           </p>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.8rem', fontStyle: 'italic' }}>
-            X-Scaffold Research Project — Expert Evaluation Interview Protocol
+            X-Scaffold Research Project - Expert Evaluation Interview Protocol
           </p>
 
           {/* Section 1: Credentials */}
@@ -2236,7 +2430,7 @@ const EvaluationForm = () => {
           <div className="evaluation-section">
             <h3>🔬 After A/B Test Experience</h3>
             <div className="evaluation-question">
-              <label><strong>Q1.</strong> You've just experienced two different hint approaches — Test A and Test B. In your own words, can you describe what you observed as the key differences between the two?</label>
+              <label><strong>Q1.</strong> You've just experienced two different hint approaches - Test A and Test B. In your own words, can you describe what you observed as the key differences between the two?</label>
               <textarea className="textarea-field" value={formData.q1} onChange={(e) => handleChange('q1', e.target.value)} placeholder="Describe the differences you observed..." />
             </div>
             <div className="evaluation-question">
@@ -2506,7 +2700,7 @@ const LMSExplained = () => {
         <p style={{ color: '#64748b', marginBottom: '1.5rem', fontSize: '0.9rem', lineHeight: 1.6 }}>
           The Learning Mastery Score (LMS) estimates a student's <strong>true learning level</strong>,
           not just their exam outcome. Unlike raw scores, LMS penalizes hint dependency, rewards
-          metacognitive accuracy, and accounts for knowledge stability—all backed by educational
+          metacognitive accuracy, and accounts for knowledge stability-all backed by educational
           psychology research.
         </p>
 
