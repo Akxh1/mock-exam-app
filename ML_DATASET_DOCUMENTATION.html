@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X-Scaffold Dataset Documentation</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --text-color: #333;
+            --bg-color: #fff;
+            --secondary-bg: #f8f9fa;
+            --border-color: #e9ecef;
+        }
+
+        body {
+            font-family: "Times New Roman", Times, serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px;
+            background: white;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Header Styling */
+        header {
+            text-align: center;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-family: "Arial", sans-serif;
+            font-size: 24pt;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .subtitle {
+            font-family: "Arial", sans-serif;
+            font-size: 14pt;
+            color: #666;
+            font-weight: normal;
+            margin-top: 0;
+        }
+
+        .meta-info {
+            font-style: italic;
+            color: #555;
+            margin-top: 15px;
+            font-size: 11pt;
+        }
+
+        /* Section Styling */
+        section {
+            margin-bottom: 35px;
+        }
+
+        h2 {
+            font-family: "Arial", sans-serif;
+            font-size: 16pt;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            margin-top: 30px;
+        }
+
+        h3 {
+            font-family: "Arial", sans-serif;
+            font-size: 13pt;
+            color: var(--primary-color);
+            margin-top: 25px;
+        }
+
+        h4 {
+            font-family: "Arial", sans-serif;
+            font-size: 11pt;
+            font-weight: bold;
+            color: #444;
+            margin-bottom: 5px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        /* Abstract Box */
+        .abstract {
+            background-color: var(--secondary-bg);
+            padding: 20px;
+            border-left: 4px solid var(--accent-color);
+            margin-bottom: 30px;
+            font-style: italic;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-family: "Arial", sans-serif;
+            font-size: 10pt;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        /* Lists */
+        ul,
+        ol {
+            margin-bottom: 15px;
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 5px;
+        }
+
+        /* Code/Math */
+        code {
+            font-family: "Courier New", Courier, monospace;
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+
+        .formula {
+            background-color: #f8f9fa;
+            padding: 15px;
+            text-align: center;
+            font-family: "Courier New", Courier, monospace;
+            border: 1px dashed #ccc;
+            margin: 20px 0;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 10pt;
+            color: #777;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+
+            .container {
+                box-shadow: none;
+                max-width: 100%;
+                padding: 0;
+            }
+
+            a {
+                text-decoration: none;
+                color: black;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <h1>X-Scaffold Student Dataset Documentation</h1>
+            <h2 class="subtitle">Technical Specification & Methodology for <code>xscaffold_student_dataset.csv</code>
+            </h2>
+            <div class="meta-info">
+                Project: Predict-Explain-Act Framework for Intelligent LMS<br>
+                Date: January 2026<br>
+                Version: 1.0.0
+            </div>
+        </header>
+
+        <div class="abstract">
+            <strong>Abstract:</strong> This document details the provenance, structure, and generation methodology of
+            the X-Scaffold Student Dataset. Designed to support the "Predict-Explain-Act" framework, this dataset
+            synthesizes authentic behavioral patterns captured from a Mock Exam data collection instrument. It enables
+            the training of robust Machine Learning models for identifying at-risk students and driving automated
+            interventions in educational settings.
+        </div>
+
+        <section id="introduction">
+            <h2>1. Introduction</h2>
+            <p>The <strong>X-Scaffold Student Dataset</strong> serves as the foundational data layer for a research
+                initiative aimed at bridging the gap between student data collection and actionable pedagogical
+                intervention. While modern Learning Management Systems (LMS) aggregate vast amounts of interaction data,
+                they often lack the capability to translate this data into real-time, explainable insights.</p>
+            <p>This dataset was constructed to validate a unified framework that combines:</p>
+            <ul>
+                <li><strong>Machine Learning (ML):</strong> To predict student mastery levels.</li>
+                <li><strong>Explainable AI (XAI):</strong> To interpret predictions for educators (via SHAP values).
+                </li>
+                <li><strong>Large Language Models (LLM):</strong> To generate adaptive hints and scaffolding based on
+                    identified deficits.</li>
+            </ul>
+        </section>
+
+        <section id="methodology">
+            <h2>2. Data Collection Methodology</h2>
+            <p>The data acquisition process followed a rigorous two-stage approach: authentic data capture followed by
+                synthetic scaling.</p>
+
+            <h3>2.1. The Data Collection Instrument</h3>
+            <p>Real-world behavioral data was collected using a custom-built <strong>Mock Exam Application</strong>.
+                This instrument simulated a high-stakes assessment environment to capture authentic student behaviors.
+                Unlike standard quizzes that only record final answers, this application logged granular interactions,
+                including:</p>
+            <ul>
+                <li><strong>Temporal Dynamics:</strong> Time spent per question, hesitation latencies, and total
+                    duration.</li>
+                <li><strong>Navigation Patterns:</strong> Tab switching frequency, answer revision rates, and question
+                    review markings.</li>
+                <li><strong>Cognitive States:</strong> Self-reported confidence levels and hint usage patterns.</li>
+            </ul>
+
+            <h3>2.2. Exploratory Data Analysis (EDA)</h3>
+            <p>Following data collection, an Exploratory Data Analysis phase was conducted to determine feature
+                relevance. This analysis identified 11 key features with high predictive power, categorized into two
+                tiers:</p>
+            <ul>
+                <li><strong>Tier 1 (Core Features):</strong> Metrics with strong theoretical backing and direct
+                    inclusion in the Learning Mastery Score (LMS) formula.</li>
+                <li><strong>Tier 2 (Predictive Features):</strong> Behavioral signals that enhance ML model accuracy but
+                    are not part of the deterministic LMS calculation.</li>
+            </ul>
+        </section>
+
+        <section id="synthetic-generation">
+            <h2>3. Synthetic Data Generation</h2>
+            <p>To ensure model robustness and protect participant privacy, a synthetic dataset of 2,000 records was
+                generated based on the statistical properties of the real collected data.</p>
+
+            <h3>3.1. Generation Technique</h3>
+            <p>The <strong>Cholesky Decomposition</strong> method was employed to generate multivariate normal
+                distributions that preserve the correlation matrix of the original data. This ensures that the synthetic
+                students exhibit realistic relationships between features (e.g., students who use more hints typically
+                take longer per question).</p>
+
+            <h3>3.2. Student Archetypes</h3>
+            <p>The data generation process modeled four distinct student profiles derived from educational theory:</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Archetype</th>
+                        <th>Distribution</th>
+                        <th>Key Characteristics</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>At-Risk</strong></td>
+                        <td>15%</td>
+                        <td>Low scores, high hint reliance, erratic navigation, low confidence.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Developing</strong></td>
+                        <td>35%</td>
+                        <td>Moderate scores, inconsistent behavior, moderate hint usage.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Proficient</strong></td>
+                        <td>35%</td>
+                        <td>Good understanding, low hint usage, stable engagement patterns.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Advanced</strong></td>
+                        <td>15%</td>
+                        <td>High distinction scores, minimal hints, high confidence, efficient processing.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="dataset-specification">
+            <h2>4. Dataset Specification</h2>
+            <p>The dataset <code>xscaffold_student_dataset.csv</code> contains 11 feature columns and target variables
+                for classification.</p>
+
+            <h3>4.1. Feature Dictionary</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Feature Name</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Research Justification</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>score_percentage</code></td>
+                        <td>Float (0-100)</td>
+                        <td>Total exam score</td>
+                        <td>Primary performance indicator (Pardos & Baker, 2014)</td>
+                    </tr>
+                    <tr>
+                        <td><code>hard_question_accuracy</code></td>
+                        <td>Float (0-100)</td>
+                        <td>Accuracy on difficulty "Hard"</td>
+                        <td>Proxy for deep understanding (Chi et al., 2018)</td>
+                    </tr>
+                    <tr>
+                        <td><code>hint_usage_percentage</code></td>
+                        <td>Float (0-100)</td>
+                        <td>% questions where hints accessed</td>
+                        <td>Inverse indicator of independence (Aleven et al., 2016)</td>
+                    </tr>
+                    <tr>
+                        <td><code>avg_confidence</code></td>
+                        <td>Float (1-5)</td>
+                        <td>Self-reported confidence rating</td>
+                        <td>Metacognitive awareness metric (Tobias & Everson, 2002)</td>
+                    </tr>
+                    <tr>
+                        <td><code>avg_time_per_question</code></td>
+                        <td>Float (s)</td>
+                        <td>Mean time spent on items</td>
+                        <td>Processing speed & cognitive load (D'Mello & Graesser, 2012)</td>
+                    </tr>
+                    <tr>
+                        <td><code>tab_switches_rate</code></td>
+                        <td>Float</td>
+                        <td>Focus loss events per question</td>
+                        <td>Attention & off-task behavior (Baker et al., 2004)</td>
+                    </tr>
+                    <tr>
+                        <td><code>answer_changes_rate</code></td>
+                        <td>Float</td>
+                        <td>Revisions per question</td>
+                        <td>Indicator of knowledge stability/uncertainty</td>
+                    </tr>
+                    <tr>
+                        <td><code>review_percentage</code></td>
+                        <td>Float</td>
+                        <td>% marked for review</td>
+                        <td>Metacognitive monitoring strategy</td>
+                    </tr>
+                    <tr>
+                        <td><code>avg_first_action_latency</code></td>
+                        <td>Float (s)</td>
+                        <td>Seconds before first interaction</td>
+                        <td>Cognitive load indicator (Sweller, 2011)</td>
+                    </tr>
+                    <tr>
+                        <td><code>clicks_per_question</code></td>
+                        <td>Float</td>
+                        <td>Total interaction count per item</td>
+                        <td>Engagement intensity (Cocea & Weibelzahl, 2009)</td>
+                    </tr>
+                    <tr>
+                        <td><code>performance_trend</code></td>
+                        <td>Float</td>
+                        <td>Score delta (2nd half - 1st half)</td>
+                        <td>Fatigue vs. Improvement (Roscoe et al., 2014)</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>4.2. Target Variable: Learning Mastery Score (LMS)</h3>
+            <p>The target variable is derived from a weighted formula encompassing performance and behavior, rather than
+                raw score alone. This aligns with the project's goal of measuring <em>holistic mastery</em>.</p>
+            <div class="formula">
+                LMS = 0.50(S) + 0.15(Hd) + 10(Ccal) + 10(Ks) + 10(Af) − 15(Hu)<sup>1.5</sup>
+            </div>
+            <p><em>Where S=Score, Hd=Hard Accuracy, Ccal=Calibration, Ks=Stability, Af=Attention, Hu=Hint Usage.</em>
+            </p>
+        </section>
+
+        <section id="ml-framework">
+            <h2>5. Machine Learning Framework</h2>
+
+            <h3>5.1. Model Selection: Bagging Classifier</h3>
+            <p>The research utilizes a <strong>Bagging Classifier</strong> (Bootstrap Aggregating) with an ensemble of
+                50 Decision Trees. This architectural choice was driven by specific requirements of educational data:
+            </p>
+            <ol>
+                <li><strong>Variance Reduction:</strong> Educational data is inherently noisy; bagging smoothes out
+                    anomalies by averaging predictions across multiple base estimators.</li>
+                <li><strong>Class Imbalance Handling:</strong> The bootstrap sampling method ensures that minority
+                    classes (e.g., At-Risk) are adequately represented in the training process of individual trees.</li>
+                <li><strong>Interpretability Support:</strong> While ensemble models are complex, they remain compatible
+                    with model-agnostic interpretation techniques like SHAP.</li>
+            </ol>
+
+            <h3>5.2. Validation Strategy</h3>
+            <p>Model performance is validated using <strong>Stratified K-Fold Cross-Validation (k=5)</strong>. This
+                ensures that each fold preserves the percentage of samples for each class, providing a reliable estimate
+                of the model's generalization capability across different student cohorts.</p>
+        </section>
+
+        <footer>
+            <p>&copy; 2026 X-Scaffold Research Project. All Rights Reserved.</p>
+        </footer>
+    </div>
+
+</body>
+
+</html>

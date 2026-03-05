@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { getRandomQuestions } from './questions';
+import { getRandomQuestions, questionBank } from './questions';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb, X } from 'lucide-react';
+import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb, X, FlaskConical, ClipboardList, Target, Loader2, ArrowLeft, Star } from 'lucide-react';
 import './App.css';
 
 // --- CONFIGURATION ---
@@ -205,6 +205,27 @@ const Home = () => {
           <button className="btn-primary btn-large" onClick={handleStart}>
             Begin Assessment <ArrowRight size={20} />
           </button>
+
+          {/* Research Validation Section */}
+          <div className="research-divider">Research Validation</div>
+          <div className="research-buttons-grid">
+            <motion.button
+              className="research-btn research-btn-ab"
+              onClick={() => navigate('/ab-testing')}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <FlaskConical size={18} /> A/B Testing
+            </motion.button>
+            <motion.button
+              className="research-btn research-btn-eval"
+              onClick={() => navigate('/evaluation')}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <ClipboardList size={18} /> Expert Evaluation
+            </motion.button>
+          </div>
         </motion.div>
 
         <motion.div variants={itemVariants} className="consent-text">
@@ -1138,6 +1159,1220 @@ const Results = ({ showFeatures }) => {
   );
 };
 
+// =============================================
+// --- GEMINI API UTILITIES (A/B Testing) ---
+// =============================================
+
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+const callGeminiWithRetry = async (prompt, config, maxRetries = 2) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(GEMINI_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: config
+        }),
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (response.status === 429 && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data = await response.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    } catch (error) {
+      if (attempt === maxRetries) return null;
+    }
+  }
+  return null;
+};
+
+const generateGenericHint = async (questionText) => {
+  const prompt = `You are a helpful tutor. A student is practising and needs a hint.
+
+=== QUESTION ===
+"${questionText}"
+
+=== INSTRUCTIONS ===
+Provide a SHORT, one-sentence hint that nudges the student toward the right approach WITHOUT revealing the answer.
+- Maximum 1-2 sentences
+- Be encouraging and concise
+- Point toward the key concept needed, not the solution
+- Output plain text only, no markdown or HTML.
+
+Generate the one-liner hint now:`;
+
+  const startTime = Date.now();
+  const text = await callGeminiWithRetry(prompt, { temperature: 0.5, maxOutputTokens: 100 });
+  const responseTime = Date.now() - startTime;
+
+  if (text) return { text, source: 'gemini_api', responseTime };
+  return null;
+};
+
+const generateAdaptiveHint = async (questionText, level) => {
+  const levelInstructions = {
+    L1: `You are an expert Socratic tutor. The student is PROFICIENT — they understand core concepts well.
+
+=== ADAPTIVE SCAFFOLDING: LEVEL 1 (Socratic/Minimal) ===
+- Ask ONE thought-provoking question that guides their thinking
+- Do NOT explain the concept — trust their ability to reason
+- Reference the specific mathematical/logical principle involved
+- Keep it under 40 words
+- Tone: Challenging, respectful, like a peer discussion`,
+
+    L2: `You are a supportive, structured tutor. The student is DEVELOPING — they have partial understanding.
+
+=== ADAPTIVE SCAFFOLDING: LEVEL 2 (Structured Nudge) ===
+- Give ONE key concept reminder relevant to this question
+- Point out a common misconception or mistake to avoid
+- Provide the first step of the approach WITHOUT revealing the answer
+- Keep it under 80 words
+- Tone: Supportive, clear, structured`,
+
+    L3: `You are an empathetic, patient tutor. The student is STRUGGLING — they need significant support.
+
+=== ADAPTIVE SCAFFOLDING: LEVEL 3 (Step-by-Step) ===
+- Start with a brief encouraging statement
+- Break down the problem using a simple real-world analogy
+- Give step-by-step guidance toward understanding (not just the answer)
+- Explain the underlying concept in simple terms
+- Keep it under 150 words
+- Tone: Warm, encouraging, patient — like a mentor`
+  };
+
+  const prompt = `${levelInstructions[level]}
+
+=== QUESTION ===
+"${questionText}"
+
+=== OUTPUT REQUIREMENTS ===
+1. Plain text only (no markdown, no HTML, no bullet symbols)
+2. Personalized to the described student level
+3. Do NOT reveal the answer directly
+
+Generate the ${level} hint now:`;
+
+  const startTime = Date.now();
+  const text = await callGeminiWithRetry(prompt, {
+    temperature: 0.7,
+    maxOutputTokens: level === 'L3' ? 300 : level === 'L2' ? 150 : 80
+  });
+  const responseTime = Date.now() - startTime;
+
+  if (text) return { text, source: `gemini_api_${level.toLowerCase()}`, responseTime };
+  return null;
+};
+
+// =============================================
+// --- A/B TEST HUB PAGE ---
+// =============================================
+const ABTestHub = () => {
+  const navigate = useNavigate();
+  const [participantName, setParticipantName] = useState('');
+
+  return (
+    <Layout>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        style={{ maxWidth: '650px', margin: '0 auto' }}
+      >
+        <div className="card-glass" style={{ padding: '2rem', textAlign: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '0.5rem' }}>
+            <FlaskConical size={28} color="var(--ab-test-b)" />
+            <h2 style={{ margin: 0, color: 'var(--primary)' }}>A/B Testing Module</h2>
+          </div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+            Compare two hint approaches to evaluate the effectiveness of adaptive scaffolding.
+            Take one or both tests, then share your feedback.
+          </p>
+
+          {/* Optional Participant Name */}
+          <div className="input-group" style={{ maxWidth: '350px', margin: '0 auto 1.5rem auto' }}>
+            <label style={{ fontSize: '0.85rem' }}>Participant Name / Identifier</label>
+            <input
+              type="text"
+              placeholder="Optional — Enter your name"
+              value={participantName}
+              onChange={(e) => setParticipantName(e.target.value)}
+              style={{ textAlign: 'center' }}
+            />
+          </div>
+
+          {/* Test Cards */}
+          <div className="ab-cards-grid">
+            {/* Test A Card */}
+            <motion.div className="ab-card ab-card-a" whileHover={{ y: -4 }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📝</div>
+              <h3 style={{ color: '#1d4ed8' }}>TEST A</h3>
+              <p style={{ fontWeight: 600, color: '#3b82f6', marginBottom: '0.5rem' }}>Generic AI Hints</p>
+              <p>Standard one-size-fits-all hints — typical LMS experience</p>
+              <motion.button
+                className="btn-primary"
+                style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', width: '100%' }}
+                onClick={() => navigate('/ab-testing/test-a', { state: { participantName } })}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                Start Test A <ArrowRight size={16} />
+              </motion.button>
+            </motion.div>
+
+            {/* Test B Card */}
+            <motion.div className="ab-card ab-card-b" whileHover={{ y: -4 }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎯</div>
+              <h3 style={{ color: '#6d28d9' }}>TEST B</h3>
+              <p style={{ fontWeight: 600, color: '#7c3aed', marginBottom: '0.5rem' }}>Adaptive Scaffolding</p>
+              <p>Research-enhanced hints based on mastery level</p>
+              <motion.button
+                className="btn-primary"
+                style={{ background: 'linear-gradient(135deg, #7c3aed, #4c1d95)', width: '100%' }}
+                onClick={() => navigate('/ab-testing/test-b', { state: { participantName } })}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                Start Test B <ArrowRight size={16} />
+              </motion.button>
+            </motion.div>
+          </div>
+
+          {/* Evaluate Button */}
+          <motion.button
+            className="btn-primary"
+            style={{
+              background: 'linear-gradient(135deg, #059669, #047857)',
+              width: '100%',
+              padding: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              marginBottom: '1rem'
+            }}
+            onClick={() => navigate('/evaluation', { state: { participantName } })}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+          >
+            <ClipboardList size={18} /> Evaluate Both Tests <ArrowRight size={16} />
+          </motion.button>
+
+          {/* Back */}
+          <button
+            onClick={() => navigate('/')}
+            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', margin: '0 auto' }}
+          >
+            <ArrowLeft size={16} /> Back to Home
+          </button>
+        </div>
+      </motion.div>
+    </Layout>
+  );
+};
+
+// =============================================
+// --- TEST A EXAM (Generic Hints) ---
+// =============================================
+const TestAExam = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const participantName = location.state?.participantName || '';
+
+  const [questions, setQuestions] = useState([]);
+  const [currentQIndex, setCurrentQIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [showHint, setShowHint] = useState(false);
+  const [hintData, setHintData] = useState(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [helpfulness, setHelpfulness] = useState({});
+  const [sessionId] = useState(() => `ab_sess_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`);
+  const [questionsLog, setQuestionsLog] = useState([]);
+  const [hintsRequested, setHintsRequested] = useState(0);
+  const startTimeRef = useRef(Date.now());
+  const hintOpenTimeRef = useRef(null);
+
+  useEffect(() => {
+    setQuestions(getRandomQuestions(5));
+  }, []);
+
+  const currentQ = questions[currentQIndex];
+
+  const handleGetHint = async () => {
+    if (hintLoading || hintData) return;
+    setHintLoading(true);
+    setShowHint(true);
+    setHintsRequested(prev => prev + 1);
+    hintOpenTimeRef.current = Date.now();
+
+    let result = await generateGenericHint(currentQ.question);
+
+    if (!result) {
+      const fallbackText = currentQ.hint || "Re-read the question carefully and think about the key concept.";
+      result = { text: fallbackText, source: 'static_fallback', responseTime: null };
+    }
+
+    setHintData(result);
+    setHintLoading(false);
+
+    // Log to Firebase
+    try {
+      await addDoc(collection(db, 'ab_hint_logs'), {
+        session_id: sessionId,
+        test_type: 'A',
+        scaffolding_level: null,
+        question_id: currentQ.id,
+        question_text: currentQ.question,
+        hint_text: result.text,
+        hint_source: result.source,
+        api_response_time_ms: result.responseTime || null,
+        timestamp: new Date()
+      });
+    } catch (err) {
+      console.warn('Failed to log hint:', err);
+    }
+  };
+
+  const handleCloseHint = () => {
+    if (hintOpenTimeRef.current) {
+      const viewDuration = (Date.now() - hintOpenTimeRef.current) / 1000;
+      // Store view duration (could log to Firebase)
+      hintOpenTimeRef.current = null;
+    }
+    setShowHint(false);
+  };
+
+  const handleNext = () => {
+    setQuestionsLog(prev => [...prev, {
+      question_id: currentQ.id,
+      hint_requested: !!hintData,
+      selected_answer: selectedOption,
+      hint_helpfulness: helpfulness[currentQIndex] || null
+    }]);
+
+    if (currentQIndex < questions.length - 1) {
+      setCurrentQIndex(prev => prev + 1);
+      setSelectedOption(null);
+      setShowHint(false);
+      setHintData(null);
+    } else {
+      // Save session to Firebase
+      const sessionData = {
+        session_id: sessionId,
+        participant_name: participantName || null,
+        test_type: 'A',
+        scaffolding_level: null,
+        started_at: new Date(startTimeRef.current),
+        completed_at: new Date(),
+        questions_count: 5,
+        hints_requested: hintsRequested,
+        questions: [...questionsLog, {
+          question_id: currentQ.id,
+          hint_requested: !!hintData,
+          selected_answer: selectedOption,
+          hint_helpfulness: helpfulness[currentQIndex] || null
+        }]
+      };
+
+      addDoc(collection(db, 'ab_test_sessions'), sessionData)
+        .catch(err => console.warn('Failed to save session:', err));
+
+      navigate('/ab-testing/complete', {
+        state: { test_type: 'A', participantName }
+      });
+    }
+  };
+
+  if (questions.length === 0) return <Layout><div style={{ textAlign: 'center', padding: '3rem' }}><Loader2 size={32} className="spin-animation" /></div></Layout>;
+
+  return (
+    <Layout>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <div className="card-glass" style={{ padding: '2rem' }}>
+          {/* Test A Banner */}
+          <div className="test-banner test-banner-a">
+            TEST A — Generic Hints
+          </div>
+
+          {/* Info Notice */}
+          <div className="consent-notice" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>You <strong>do not</strong> need to answer the questions. Focus on <strong>requesting and comparing the hints</strong> — that's what matters for this evaluation.</span>
+          </div>
+
+          {/* Progress */}
+          <div className="progress-bar-container" style={{ marginBottom: '1.5rem', borderRadius: '4px', overflow: 'hidden' }}>
+            <div className="progress-fill" style={{ width: `${((currentQIndex + 1) / questions.length) * 100}%`, background: '#3b82f6' }} />
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            Question {currentQIndex + 1} of {questions.length}
+          </div>
+
+          {/* Question */}
+          <div className="question-text">{currentQ.question}</div>
+
+          {/* Options */}
+          <div className="options-grid">
+            {currentQ.options.map((opt, idx) => (
+              <button
+                key={idx}
+                className={`option-btn ${selectedOption === opt ? 'selected' : ''}`}
+                onClick={() => setSelectedOption(opt)}
+              >
+                <span className="option-circle" />
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {/* Hint Button */}
+          <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <button
+              className="hint-toggle-btn"
+              onClick={handleGetHint}
+              disabled={hintLoading || !!hintData}
+              style={{ opacity: hintData ? 0.6 : 1 }}
+            >
+              {hintLoading ? <Loader2 size={16} className="spin-animation" /> : <Lightbulb size={16} />}
+              {hintLoading ? 'Generating...' : hintData ? '✔ Hint Viewed' : '💡 Get Hint'}
+            </button>
+          </div>
+
+          {/* Inline Hint Display */}
+          {showHint && hintData && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ marginTop: '1rem' }}
+            >
+              <div className="hint-content" style={{ position: 'relative' }}>
+                {hintData.source === 'static_fallback' && (
+                  <span style={{
+                    position: 'absolute', top: '-8px', right: '8px',
+                    background: '#f59e0b', color: 'white', padding: '2px 8px',
+                    borderRadius: '10px', fontSize: '0.7rem', fontWeight: 600
+                  }}>
+                    ⚡ Quick Hint
+                  </span>
+                )}
+                {hintData.text}
+              </div>
+              {/* Helpfulness */}
+              <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                  Was this hint helpful?
+                </div>
+                <div className="hint-helpfulness">
+                  {[{ emoji: '😕', label: 'Not Really', val: 1 }, { emoji: '😐', label: 'Somewhat', val: 2 }, { emoji: '😊', label: 'Very Helpful', val: 3 }].map(h => (
+                    <button
+                      key={h.val}
+                      className={helpfulness[currentQIndex] === h.val ? 'selected' : ''}
+                      onClick={() => setHelpfulness(prev => ({ ...prev, [currentQIndex]: h.val }))}
+                    >
+                      {h.emoji} {h.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Navigation */}
+          <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button
+              onClick={() => navigate('/ab-testing', { state: { participantName } })}
+              style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <ArrowLeft size={16} /> Back to Hub
+            </button>
+            <motion.button
+              className="btn-primary"
+              onClick={handleNext}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {currentQIndex < questions.length - 1 ? (
+                <>Next Question <ArrowRight size={16} /></>
+              ) : (
+                <>Finish Test <CheckCircle size={16} /></>
+              )}
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+    </Layout>
+  );
+};
+
+// =============================================
+// --- TEST B EXAM (Adaptive Scaffolded Hints) ---
+// =============================================
+const TestBExam = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const participantName = location.state?.participantName || '';
+
+  const [selectedLevel, setSelectedLevel] = useState(null);
+  const [examStarted, setExamStarted] = useState(false);
+  const [questions, setQuestions] = useState([]);
+  const [currentQIndex, setCurrentQIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [showHint, setShowHint] = useState(false);
+  const [hintData, setHintData] = useState(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [helpfulness, setHelpfulness] = useState({});
+  const [sessionId] = useState(() => `ab_sess_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`);
+  const [questionsLog, setQuestionsLog] = useState([]);
+  const [hintsRequested, setHintsRequested] = useState(0);
+  const startTimeRef = useRef(null);
+  const hintOpenTimeRef = useRef(null);
+
+  const levels = [
+    { id: 'L1', label: 'Proficient', style: 'Socratic', color: '#22c55e', description: 'Minimal Socratic prompts — you\'ll receive thought-provoking questions' },
+    { id: 'L2', label: 'Developing', style: 'Structured', color: '#f59e0b', description: 'Structured nudges with concept reminders and common pitfalls' },
+    { id: 'L3', label: 'Struggling', style: 'Guided', color: '#ef4444', description: 'Step-by-step guidance with analogies and encouragement' }
+  ];
+
+  const currentLevel = levels.find(l => l.id === selectedLevel);
+
+  const handleStartExam = () => {
+    if (!selectedLevel) return;
+    setQuestions(getRandomQuestions(5));
+    startTimeRef.current = Date.now();
+    setExamStarted(true);
+  };
+
+  const handleGetHint = async () => {
+    if (hintLoading || hintData) return;
+    setHintLoading(true);
+    setShowHint(true);
+    setHintsRequested(prev => prev + 1);
+    hintOpenTimeRef.current = Date.now();
+
+    const currentQ = questions[currentQIndex];
+    let result = await generateAdaptiveHint(currentQ.question, selectedLevel);
+
+    if (!result) {
+      const fallbackText = currentQ.adaptiveHints?.[selectedLevel] ||
+        currentQ.hint ||
+        "Re-read the question carefully and think about the key concept.";
+      result = { text: fallbackText, source: `structured_${selectedLevel.toLowerCase()}`, responseTime: null };
+    }
+
+    setHintData(result);
+    setHintLoading(false);
+
+    // Log to Firebase
+    try {
+      await addDoc(collection(db, 'ab_hint_logs'), {
+        session_id: sessionId,
+        test_type: 'B',
+        scaffolding_level: selectedLevel,
+        question_id: currentQ.id,
+        question_text: currentQ.question,
+        hint_text: result.text,
+        hint_source: result.source,
+        api_response_time_ms: result.responseTime || null,
+        timestamp: new Date()
+      });
+    } catch (err) {
+      console.warn('Failed to log hint:', err);
+    }
+  };
+
+  const handleNext = () => {
+    const currentQ = questions[currentQIndex];
+    setQuestionsLog(prev => [...prev, {
+      question_id: currentQ.id,
+      hint_requested: !!hintData,
+      selected_answer: selectedOption,
+      hint_helpfulness: helpfulness[currentQIndex] || null
+    }]);
+
+    if (currentQIndex < questions.length - 1) {
+      setCurrentQIndex(prev => prev + 1);
+      setSelectedOption(null);
+      setShowHint(false);
+      setHintData(null);
+    } else {
+      const currentQ = questions[currentQIndex];
+      const sessionData = {
+        session_id: sessionId,
+        participant_name: participantName || null,
+        test_type: 'B',
+        scaffolding_level: selectedLevel,
+        started_at: new Date(startTimeRef.current),
+        completed_at: new Date(),
+        questions_count: 5,
+        hints_requested: hintsRequested,
+        questions: [...questionsLog, {
+          question_id: currentQ.id,
+          hint_requested: !!hintData,
+          selected_answer: selectedOption,
+          hint_helpfulness: helpfulness[currentQIndex] || null
+        }]
+      };
+
+      addDoc(collection(db, 'ab_test_sessions'), sessionData)
+        .catch(err => console.warn('Failed to save session:', err));
+
+      navigate('/ab-testing/complete', {
+        state: { test_type: 'B', level: selectedLevel, participantName }
+      });
+    }
+  };
+
+  // --- Level Selector Screen ---
+  if (!examStarted) {
+    return (
+      <Layout>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ maxWidth: '550px', margin: '0 auto' }}
+        >
+          <div className="card-glass" style={{ padding: '2rem', textAlign: 'center' }}>
+            <Target size={36} color="var(--ab-test-b)" style={{ marginBottom: '0.75rem' }} />
+            <h2 style={{ color: 'var(--primary)', marginBottom: '0.5rem' }}>Select Your Scaffolding Level</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '0.5rem' }}>
+              In the full system, this level is automatically predicted by the ML model based on your diagnostic exam data.
+              For this test, please choose a level:
+            </p>
+
+            {/* Encouragement to try all levels */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(124,58,237,0.03))',
+              border: '1px solid rgba(124,58,237,0.2)',
+              borderRadius: 'var(--radius-md)',
+              padding: '0.75rem 1rem',
+              marginBottom: '1rem',
+              textAlign: 'left',
+              fontSize: '0.82rem',
+              lineHeight: 1.6,
+              color: 'var(--text-primary)'
+            }}>
+              <strong>⚡ Important:</strong> Please try <strong>all 3 levels</strong> to fully experience the range of pedagogical interventions.
+              Each level demonstrates a fundamentally different scaffolding approach. You can return here after each test to select a different level.
+              <br /><span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Focus on the <em>hints</em>, not on answering the questions.</span>
+            </div>
+
+            <div className="level-cards-grid">
+              {levels.map(level => (
+                <motion.div
+                  key={level.id}
+                  className={`level-card ${selectedLevel === level.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedLevel(level.id)}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="level-badge" style={{ background: level.color }}>{level.id}</div>
+                  <div className="level-info">
+                    <h4 style={{ color: level.color }}>{level.id} — {level.label} ({level.style})</h4>
+                    <p>{level.description}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="consent-notice" style={{ marginTop: '1rem' }}>
+              🔒 By proceeding, you consent to your interaction data being anonymously recorded for research purposes.
+            </div>
+
+            <motion.button
+              className="btn-primary"
+              style={{
+                background: selectedLevel ? 'linear-gradient(135deg, #7c3aed, #4c1d95)' : '#cbd5e1',
+                width: '100%', padding: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+              }}
+              onClick={handleStartExam}
+              disabled={!selectedLevel}
+              whileHover={selectedLevel ? { scale: 1.01 } : {}}
+            >
+              Begin Test B <ArrowRight size={16} />
+            </motion.button>
+
+            <button
+              onClick={() => navigate('/ab-testing')}
+              style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', margin: '1rem auto 0' }}
+            >
+              <ArrowLeft size={16} /> Back to A/B Testing
+            </button>
+          </div>
+        </motion.div>
+      </Layout>
+    );
+  }
+
+  // --- Exam Screen ---
+  if (questions.length === 0) return <Layout><div style={{ textAlign: 'center', padding: '3rem' }}><Loader2 size={32} className="spin-animation" /></div></Layout>;
+
+  const currentQ = questions[currentQIndex];
+
+  return (
+    <Layout>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <div className="card-glass" style={{ padding: '2rem' }}>
+          {/* Test B Banner */}
+          <div className="test-banner test-banner-b">
+            TEST B — Adaptive Scaffolding ({currentLevel?.id} {currentLevel?.label})
+          </div>
+
+          {/* Info Notice */}
+          <div className="consent-notice" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>You <strong>do not</strong> need to answer the questions. Focus on <strong>requesting and comparing the hints</strong> — observe how this level's scaffolding approach differs.</span>
+          </div>
+
+          {/* Progress */}
+          <div className="progress-bar-container" style={{ marginBottom: '1.5rem', borderRadius: '4px', overflow: 'hidden' }}>
+            <div className="progress-fill" style={{ width: `${((currentQIndex + 1) / questions.length) * 100}%`, background: '#7c3aed' }} />
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Question {currentQIndex + 1} of {questions.length}</span>
+            <span className="hint-level-badge" style={{ background: currentLevel?.color }}>
+              {currentLevel?.id} — {currentLevel?.style}
+            </span>
+          </div>
+
+          {/* Question */}
+          <div className="question-text">{currentQ.question}</div>
+
+          {/* Options */}
+          <div className="options-grid">
+            {currentQ.options.map((opt, idx) => (
+              <button
+                key={idx}
+                className={`option-btn ${selectedOption === opt ? 'selected' : ''}`}
+                onClick={() => setSelectedOption(opt)}
+              >
+                <span className="option-circle" />
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {/* Hint Button */}
+          <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <button
+              className="hint-toggle-btn"
+              onClick={handleGetHint}
+              disabled={hintLoading || !!hintData}
+              style={{ opacity: hintData ? 0.6 : 1, borderColor: 'var(--ab-test-b)', color: 'var(--ab-test-b)' }}
+            >
+              {hintLoading ? <Loader2 size={16} className="spin-animation" /> : <Target size={16} />}
+              {hintLoading ? 'Generating...' : hintData ? '✔ Hint Viewed' : '🎯 Get Adaptive Hint'}
+            </button>
+          </div>
+
+          {/* Inline Hint Display with Level UI */}
+          {showHint && hintData && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ marginTop: '1rem' }}
+            >
+              {/* Level Header */}
+              <div style={{
+                background: `linear-gradient(135deg, ${currentLevel?.color}15, ${currentLevel?.color}08)`,
+                border: `2px solid ${currentLevel?.color}40`,
+                borderRadius: '12px',
+                padding: '1rem',
+                position: 'relative'
+              }}>
+                {/* Mastery Level Badge */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
+                  <span className="hint-level-badge" style={{ background: currentLevel?.color, margin: 0 }}>
+                    {currentLevel?.id === 'L1' ? '🟢' : currentLevel?.id === 'L2' ? '🟠' : '🔴'}
+                    {' '}{currentLevel?.id} — {currentLevel?.style}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Mastery: {currentLevel?.label}
+                  </span>
+                </div>
+                {/* Hint Text */}
+                <div style={{
+                  background: 'white',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '8px',
+                  lineHeight: 1.7,
+                  fontSize: '0.95rem',
+                  color: 'var(--text-primary)',
+                  borderLeft: `4px solid ${currentLevel?.color}`
+                }}>
+                  {hintData.text}
+                </div>
+              </div>
+              {/* Helpfulness */}
+              <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                  Was this hint helpful?
+                </div>
+                <div className="hint-helpfulness">
+                  {[{ emoji: '😕', label: 'Not Really', val: 1 }, { emoji: '😐', label: 'Somewhat', val: 2 }, { emoji: '😊', label: 'Very Helpful', val: 3 }].map(h => (
+                    <button
+                      key={h.val}
+                      className={helpfulness[currentQIndex] === h.val ? 'selected' : ''}
+                      onClick={() => setHelpfulness(prev => ({ ...prev, [currentQIndex]: h.val }))}
+                    >
+                      {h.emoji} {h.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Navigation */}
+          <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button
+              onClick={() => navigate('/ab-testing', { state: { participantName } })}
+              style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <ArrowLeft size={16} /> Back to Hub
+            </button>
+            <motion.button
+              className="btn-primary"
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #4c1d95)' }}
+              onClick={handleNext}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {currentQIndex < questions.length - 1 ? (
+                <>Next Question <ArrowRight size={16} /></>
+              ) : (
+                <>Finish Test <CheckCircle size={16} /></>
+              )}
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+    </Layout>
+  );
+};
+
+// =============================================
+// --- TEST COMPLETE PAGE ---
+// =============================================
+const TestComplete = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const testType = location.state?.test_type || 'A';
+  const level = location.state?.level || null;
+  const participantName = location.state?.participantName || '';
+
+  const isTestA = testType === 'A';
+
+  return (
+    <Layout>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        style={{ maxWidth: '500px', margin: '0 auto' }}
+      >
+        <div className="card-glass" style={{ padding: '2.5rem', textAlign: 'center' }}>
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
+            style={{
+              width: '70px', height: '70px', borderRadius: '50%',
+              background: isTestA ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)' : 'linear-gradient(135deg, #7c3aed, #4c1d95)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem'
+            }}
+          >
+            <CheckCircle size={36} color="white" />
+          </motion.div>
+
+          <h2 style={{ color: 'var(--primary)', marginBottom: '0.5rem' }}>Test Complete!</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
+            You've completed <strong>Test {testType}</strong>
+            {level ? ` — Level ${level}` : ''}.
+            <br />Thank you for your participation!
+          </p>
+
+          <motion.button
+            className="btn-primary"
+            style={{
+              background: 'linear-gradient(135deg, #059669, #047857)',
+              width: '100%', padding: '0.85rem', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', gap: '8px',
+              marginBottom: '0.75rem'
+            }}
+            onClick={() => navigate('/evaluation', { state: { participantName, test_type: testType } })}
+            whileHover={{ scale: 1.01 }}
+          >
+            <ClipboardList size={18} /> Proceed to Evaluation Form <ArrowRight size={16} />
+          </motion.button>
+
+          <motion.button
+            className="btn-primary"
+            style={{
+              background: 'var(--primary)', width: '100%', padding: '0.85rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+            }}
+            onClick={() => navigate('/ab-testing', { state: { participantName } })}
+            whileHover={{ scale: 1.01 }}
+          >
+            <ArrowLeft size={18} /> Take Another Test
+          </motion.button>
+        </div>
+      </motion.div>
+    </Layout>
+  );
+};
+
+// =============================================
+// --- EVALUATION FORM PAGE ---
+// =============================================
+const EvaluationForm = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const passedName = location.state?.participantName || '';
+
+  const [formData, setFormData] = useState({
+    evaluator_name: '',
+    evaluator_role: '',
+    evaluator_role_other: '',
+    evaluator_institution: '',
+    evaluator_experience: '',
+    evaluator_experience_other: '',
+    tests_tried: [],
+    participant_name: passedName,
+    q1: '', q2: '', q3: '', q4: '', q5: '',
+    q6: '', q7: '', q8: '', q9: '', q10: ''
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
+  };
+
+  const handleTestsTried = (val) => {
+    setFormData(prev => {
+      const current = prev.tests_tried;
+      if (current.includes(val)) {
+        return { ...prev, tests_tried: current.filter(v => v !== val) };
+      }
+      return { ...prev, tests_tried: [...current, val] };
+    });
+  };
+
+  const validate = () => {
+    const errs = {};
+    if (!formData.evaluator_name.trim()) errs.evaluator_name = 'Name is required';
+    const effectiveRole = formData.evaluator_role === 'Other' ? formData.evaluator_role_other.trim() : formData.evaluator_role;
+    if (!effectiveRole) errs.evaluator_role = 'Role is required';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    setSubmitting(true);
+    const effectiveRole = formData.evaluator_role === 'Other' ? formData.evaluator_role_other.trim() : formData.evaluator_role;
+    const effectiveExp = formData.evaluator_experience === 'Other' ? formData.evaluator_experience_other.trim() : formData.evaluator_experience;
+    try {
+      await addDoc(collection(db, 'evaluation_responses'), {
+        evaluator_name: formData.evaluator_name,
+        evaluator_role: effectiveRole,
+        evaluator_institution: formData.evaluator_institution || null,
+        evaluator_experience: effectiveExp || null,
+        tests_tried: formData.tests_tried,
+        participant_name: formData.participant_name || null,
+        timestamp: new Date(),
+        q1_key_differences: formData.q1 || null,
+        q2_which_better_supports: formData.q2 || null,
+        q3_level_limitations: formData.q3 || null,
+        q4_feature_reliability: formData.q4 || null,
+        q5_lms_formula_opinion: formData.q5 || null,
+        q6_ml_validity: formData.q6 || null,
+        q7_predict_explain_act: formData.q7 || null,
+        q8_practical_ethical: formData.q8 || null,
+        q9_improvements: formData.q9 || null,
+        q10_additional_comments: formData.q10 || null
+      });
+      navigate('/evaluation/thank-you');
+    } catch (err) {
+      console.error('Submit error:', err);
+      alert('Failed to submit evaluation. Please try again.');
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <Layout>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ maxWidth: '700px', margin: '0 auto' }}
+      >
+        <div className="card-glass" style={{ padding: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.5rem' }}>
+            <ClipboardList size={28} color="var(--evaluation)" />
+            <h2 style={{ margin: 0, color: 'var(--primary)' }}>Expert / Stakeholder Evaluation</h2>
+          </div>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '0.75rem', fontSize: '0.9rem', lineHeight: 1.6 }}>
+            Please answer these questions after experiencing both Test A and Test B. Speak freely — there are no right or wrong answers.
+          </p>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.8rem', fontStyle: 'italic' }}>
+            X-Scaffold Research Project — Expert Evaluation Interview Protocol
+          </p>
+
+          {/* Section 1: Credentials */}
+          <div className="evaluation-section">
+            <h3>👤 Evaluator Credentials</h3>
+
+            <div className="evaluation-question">
+              <label>Full Name *</label>
+              <input
+                type="text"
+                className="select-field"
+                placeholder="Enter your full name"
+                value={formData.evaluator_name}
+                onChange={(e) => handleChange('evaluator_name', e.target.value)}
+                style={{ background: 'white', cursor: 'text', backgroundImage: 'none' }}
+              />
+              {errors.evaluator_name && <span style={{ color: '#ef4444', fontSize: '0.8rem' }}>{errors.evaluator_name}</span>}
+            </div>
+
+            <div className="evaluation-question">
+              <label>Role *</label>
+              <select
+                className="select-field"
+                value={formData.evaluator_role}
+                onChange={(e) => handleChange('evaluator_role', e.target.value)}
+              >
+                <option value="">Select your role</option>
+                <option value="Educator / Lecturer">Educator / Lecturer</option>
+                <option value="Student">Student</option>
+                <option value="Industry Professional">Industry Professional</option>
+                <option value="Educational Technologist">Educational Technologist</option>
+                <option value="Researcher">Researcher</option>
+                <option value="Other">Other (please specify)</option>
+              </select>
+              {formData.evaluator_role === 'Other' && (
+                <input
+                  type="text"
+                  className="select-field"
+                  placeholder="Please specify your role"
+                  value={formData.evaluator_role_other}
+                  onChange={(e) => handleChange('evaluator_role_other', e.target.value)}
+                  style={{ background: 'white', cursor: 'text', backgroundImage: 'none', marginTop: '0.5rem' }}
+                />
+              )}
+              {errors.evaluator_role && <span style={{ color: '#ef4444', fontSize: '0.8rem' }}>{errors.evaluator_role}</span>}
+            </div>
+
+            <div className="evaluation-question">
+              <label>Institution / Organization</label>
+              <input
+                type="text"
+                className="select-field"
+                placeholder="e.g. University of Westminster"
+                value={formData.evaluator_institution}
+                onChange={(e) => handleChange('evaluator_institution', e.target.value)}
+                style={{ background: 'white', cursor: 'text', backgroundImage: 'none' }}
+              />
+            </div>
+
+            <div className="evaluation-question">
+              <label>Years of Experience</label>
+              <select
+                className="select-field"
+                value={formData.evaluator_experience}
+                onChange={(e) => handleChange('evaluator_experience', e.target.value)}
+              >
+                <option value="">Select experience</option>
+                <option value="0-2 years">0-2 years</option>
+                <option value="3-5 years">3-5 years</option>
+                <option value="6-10 years">6-10 years</option>
+                <option value="10+ years">10+ years</option>
+                <option value="Other">Other (please specify)</option>
+              </select>
+              {formData.evaluator_experience === 'Other' && (
+                <input
+                  type="text"
+                  className="select-field"
+                  placeholder="Please specify your experience"
+                  value={formData.evaluator_experience_other}
+                  onChange={(e) => handleChange('evaluator_experience_other', e.target.value)}
+                  style={{ background: 'white', cursor: 'text', backgroundImage: 'none', marginTop: '0.5rem' }}
+                />
+              )}
+            </div>
+
+            <div className="evaluation-question">
+              <label>Which test(s) did you try?</label>
+              <div className="checkbox-group">
+                {[
+                  { val: 'A', label: 'Test A (Generic Hints)' },
+                  { val: 'B', label: 'Test B (Adaptive Scaffolding)' },
+                  { val: 'Both', label: 'Both' },
+                  { val: 'Neither', label: 'Neither (evaluating concept only)' }
+                ].map(opt => (
+                  <label key={opt.val}>
+                    <input
+                      type="checkbox"
+                      checked={formData.tests_tried.includes(opt.val)}
+                      onChange={() => handleTestsTried(opt.val)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: After A/B Test Experience */}
+          <div className="evaluation-section">
+            <h3>🔬 After A/B Test Experience</h3>
+            <div className="evaluation-question">
+              <label><strong>Q1.</strong> You've just experienced two different hint approaches — Test A and Test B. In your own words, can you describe what you observed as the key differences between the two?</label>
+              <textarea className="textarea-field" value={formData.q1} onChange={(e) => handleChange('q1', e.target.value)} placeholder="Describe the differences you observed..." />
+            </div>
+            <div className="evaluation-question">
+              <label><strong>Q2.</strong> Thinking about real students at varying ability levels, which approach do you believe would better support their learning, and why?</label>
+              <textarea className="textarea-field" value={formData.q2} onChange={(e) => handleChange('q2', e.target.value)} placeholder="Which approach and why..." />
+            </div>
+            <div className="evaluation-question">
+              <label><strong>Q3.</strong> In Test B, hints were tailored to three scaffolding levels (Socratic, Structured, Step-by-Step). From your experience or expertise, are there any issues or limitations you see with categorising students into these levels?</label>
+              <textarea className="textarea-field" value={formData.q3} onChange={(e) => handleChange('q3', e.target.value)} placeholder="Any issues or limitations..." />
+            </div>
+          </div>
+
+          {/* Section 3: Pedagogical & Domain Validity */}
+          <div className="evaluation-section">
+            <h3>🎓 Pedagogical & Domain Validity</h3>
+            <div className="evaluation-question">
+              <label><strong>Q4.</strong> The system uses 11 behavioural features (e.g., score, hint usage, confidence calibration, tab-switch rate, answer changes) to predict a student's mastery level. Are there any features here that you consider unreliable or any important indicators that are missing?</label>
+              <textarea className="textarea-field" value={formData.q4} onChange={(e) => handleChange('q4', e.target.value)} placeholder="Feature reliability and missing indicators..." />
+            </div>
+            <div className="evaluation-question">
+              <label><strong>Q5.</strong> The Learning Mastery Score (LMS) formula penalises hint dependency and rewards confidence calibration, rather than relying on raw exam score alone. What is your opinion on this approach to measuring student mastery?</label>
+              <textarea className="textarea-field" value={formData.q5} onChange={(e) => handleChange('q5', e.target.value)} placeholder="Your opinion on the LMS approach..." />
+            </div>
+            <div className="evaluation-question">
+              <label><strong>Q6.</strong> The system uses a machine learning model trained on synthetic data generated from real student records (N=51) to automatically classify students into mastery levels. What are your thoughts on the validity and trustworthiness of this approach?</label>
+              <textarea className="textarea-field" value={formData.q6} onChange={(e) => handleChange('q6', e.target.value)} placeholder="Your thoughts on validity..." />
+            </div>
+          </div>
+
+          {/* Section 4: Framework & Integration */}
+          <div className="evaluation-section">
+            <h3>🔗 Framework & Integration</h3>
+            <div className="evaluation-question">
+              <label><strong>Q7.</strong> The overall framework follows a "Predict → Explain → Act" pipeline: ML predicts the student's level, SHAP explains which factors contributed, and an LLM delivers an adaptive hint. Do you see value in this closed-loop approach compared to how current learning systems handle struggling students?</label>
+              <textarea className="textarea-field" value={formData.q7} onChange={(e) => handleChange('q7', e.target.value)} placeholder="Value of the closed-loop approach..." />
+            </div>
+            <div className="evaluation-question">
+              <label><strong>Q8.</strong> If this system were to be deployed in a real educational setting, what practical challenges or ethical concerns would you anticipate?</label>
+              <textarea className="textarea-field" value={formData.q8} onChange={(e) => handleChange('q8', e.target.value)} placeholder="Practical challenges or ethical concerns..." />
+            </div>
+          </div>
+
+          {/* Section 5: Overall Assessment */}
+          <div className="evaluation-section">
+            <h3>📋 Overall Assessment</h3>
+            <div className="evaluation-question">
+              <label><strong>Q9.</strong> Based on what you've seen today, what specific improvements or changes would you recommend to make this system more effective for learners?</label>
+              <textarea className="textarea-field" value={formData.q9} onChange={(e) => handleChange('q9', e.target.value)} placeholder="Recommended improvements..." />
+            </div>
+            <div className="evaluation-question">
+              <label><strong>Q10.</strong> Is there anything else about the system, the testing approach, or the research methodology that you would like to comment on?</label>
+              <textarea className="textarea-field" value={formData.q10} onChange={(e) => handleChange('q10', e.target.value)} placeholder="Additional comments..." />
+            </div>
+          </div>
+
+          {/* Submit */}
+          <motion.button
+            className="btn-primary"
+            style={{
+              width: '100%', padding: '1rem', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', gap: '8px', fontSize: '1rem'
+            }}
+            onClick={handleSubmit}
+            disabled={submitting}
+            whileHover={!submitting ? { scale: 1.01 } : {}}
+          >
+            {submitting ? (
+              <><Loader2 size={20} className="spin-animation" /> Submitting...</>
+            ) : (
+              <><CheckCircle size={20} /> Submit Evaluation</>
+            )}
+          </motion.button>
+
+          {/* Back */}
+          <button
+            onClick={() => navigate(-1)}
+            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', margin: '1rem auto 0' }}
+          >
+            <ArrowLeft size={16} /> Go Back
+          </button>
+        </div>
+      </motion.div>
+    </Layout>
+  );
+};
+
+
+
+// =============================================
+// --- THANK YOU PAGE ---
+// =============================================
+const ThankYou = () => {
+  const navigate = useNavigate();
+
+  return (
+    <Layout>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        style={{ maxWidth: '500px', margin: '0 auto' }}
+      >
+        <div className="card-glass" style={{ padding: '3rem', textAlign: 'center' }}>
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
+            style={{
+              width: '80px', height: '80px', borderRadius: '50%',
+              background: 'linear-gradient(135deg, #059669, #047857)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem'
+            }}
+          >
+            <Star size={40} color="white" />
+          </motion.div>
+
+          <h2 style={{ color: 'var(--primary)', marginBottom: '0.75rem' }}>Thank You!</h2>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '2rem' }}>
+            Your evaluation has been recorded successfully.
+            <br />Your feedback is invaluable to this research and will directly
+            contribute to improving adaptive learning systems.
+          </p>
+
+          <motion.button
+            className="btn-primary btn-large"
+            onClick={() => navigate('/')}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+          >
+            <ArrowLeft size={20} /> Return to Home
+          </motion.button>
+        </div>
+      </motion.div>
+    </Layout>
+  );
+};
+
 const App = () => {
   // Initialize State from LocalStorage (default to false if not found)
   const [showFeatures, setShowFeatures] = useState(() => {
@@ -1153,6 +2388,12 @@ const App = () => {
         <Route path="/results" element={<Results showFeatures={showFeatures} />} />
         <Route path="/admin" element={<AdminPanel showFeatures={showFeatures} setShowFeatures={setShowFeatures} />} />
         <Route path="/lms-explained" element={<LMSExplained />} />
+        <Route path="/ab-testing" element={<ABTestHub />} />
+        <Route path="/ab-testing/test-a" element={<TestAExam />} />
+        <Route path="/ab-testing/test-b" element={<TestBExam />} />
+        <Route path="/ab-testing/complete" element={<TestComplete />} />
+        <Route path="/evaluation" element={<EvaluationForm />} />
+        <Route path="/evaluation/thank-you" element={<ThankYou />} />
       </Routes>
     </Router>
   );

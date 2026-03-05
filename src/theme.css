@@ -2,17 +2,24 @@
 
 :root {
   /* University Palette */
-  --primary: #003366; /* Deep Blue */
+  --primary: #003366;
+  /* Deep Blue */
   --primary-light: #1a4d80;
-  --secondary: #F0AB00; /* Amber/Gold */
+  --secondary: #F0AB00;
+  /* Amber/Gold */
   --secondary-hover: #d19400;
-  
+
   /* Neutrals */
   --bg-color: #f8fafc;
   --surface-color: #ffffff;
   --text-primary: #1e293b;
   --text-secondary: #64748b;
   --border-color: #e2e8f0;
+
+  /* A/B Testing Accents */
+  --ab-test-a: #3b82f6;
+  --ab-test-b: #7c3aed;
+  --evaluation: #059669;
 
   /* UI Elements */
   --radius-lg: 16px;
@@ -31,6 +38,7 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --border-color: #334155;
-  --primary: #38bdf8; /* Lighter blue for dark mode contrast */
+  --primary: #38bdf8;
+  /* Lighter blue for dark mode contrast */
   --secondary: #fbbf24;
 }
