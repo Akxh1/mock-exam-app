@@ -565,3 +565,90 @@ export const getRandomQuestions = (count) => {
     const shuffled = [...questionBank].sort(() => 0.5 - Math.random());
     return shuffled.slice(0, count);
 };
+
+// =============================================================
+// FIXED A/B TEST QUESTIONS - Same 5 for both Test A and Test B
+// 3 Easy (2 Knowledge + 1 Math) | 1 Medium (Math) | 1 Hard (Math)
+// =============================================================
+export const AB_TEST_QUESTIONS = [
+    {
+        id: 118,
+        question: "The symbol ↔ represents:",
+        options: ["Biconditional", "Implication", "Conjunction", "Disjunction"],
+        correctAnswer: "Biconditional",
+        difficulty: 1,
+        topic: "Logic",
+        // TEST A - Generic one-liner (deliberately vague)
+        testAHint: "Think about what the arrows in the symbol might suggest.",
+        // TEST B - Three clearly different levels
+        testBHints: {
+            L1: "What does it mean when an arrow points in both directions at once?",
+            L2: "This symbol has arrows going **both ways**, meaning the condition works in **both directions**. Compare it with → which only goes one way. Which word means 'works both ways'?",
+            L3: "Let's look at the symbol closely! ↔ has arrows pointing **left and right**, both directions. In logic, → means 'if...then' (one direction). So ↔ means the condition works **both ways**: 'if p then q' AND 'if q then p'. The word for this is **biconditional**, 'bi' means two, so it's a two-way condition. You're doing great, just match the symbol to its name!"
+        }
+    },
+    {
+        id: 129,
+        question: "The set of all actual outputs of a function is its:",
+        options: ["Range", "Domain", "Codomain", "Inverse"],
+        correctAnswer: "Range",
+        difficulty: 1,
+        topic: "Functions",
+        // TEST A - Generic one-liner (deliberately vague)
+        testAHint: "Consider what comes out of a function versus what goes in.",
+        // TEST B - Three clearly different levels
+        testBHints: {
+            L1: "Which term describes only the values a function actually produces, not just what it could produce?",
+            L2: "There are three key terms: **Domain** = inputs, **Codomain** = all possible outputs, **Range** = the outputs that actually happen. The question asks about 'actual outputs', so which term matches that?",
+            L3: "Think of a vending machine! The **domain** is the buttons you press (inputs). The **codomain** is everything the machine could theoretically give you. The **range** is what it actually dispenses, the real outputs. The question asks for 'actual outputs', which is the **range**. Don't mix it up with codomain (that's all *possible* outputs). Keep going, you've got this!"
+        }
+    },
+    {
+        id: 108,
+        question: "Probability of getting heads in a fair coin toss?",
+        options: ["0.5", "1", "0", "0.25"],
+        correctAnswer: "0.5",
+        difficulty: 1,
+        topic: "Probability",
+        // TEST A - Generic one-liner (deliberately vague)
+        testAHint: "Think about how many possible outcomes there are.",
+        // TEST B - Three clearly different levels
+        testBHints: {
+            L1: "What fraction of the total outcomes does 'heads' represent in a fair experiment?",
+            L2: "Probability = **what you want** ÷ **total possibilities**. A fair coin has exactly 2 sides. You want heads, which is 1 of those 2 sides. What's 1 divided by 2?",
+            L3: "Let's break this down! A fair coin has exactly **2 sides**: Heads and Tails. Both are equally likely. To find the probability: take **(what you want)** and divide by **(everything that could happen)**. You want Heads, that's **1** outcome. Total possibilities = **2** outcomes. So probability = 1 ÷ 2 = **0.5** (which means 50%). That's it, nice and simple, you've got this!"
+        }
+    },
+    {
+        id: 109,
+        question: "De Morgan's First Law states ¬(A ∧ B) is equivalent to:",
+        options: ["¬A ∨ ¬B", "¬A ∧ ¬B", "A ∨ B", "¬A ∨ B"],
+        correctAnswer: "¬A ∨ ¬B",
+        difficulty: 2,
+        topic: "Boolean Algebra",
+        // TEST A - Generic one-liner (deliberately vague)
+        testAHint: "Think about how negation distributes over logical operators.",
+        // TEST B - Three clearly different levels
+        testBHints: {
+            L1: "When you negate a conjunction, what happens to the connector and the individual terms?",
+            L2: "De Morgan's rule: negating an **AND** flips it to **OR**, and each part gets negated too. So ¬(A ∧ B), the ∧ becomes ∨, and A becomes ¬A, B becomes ¬B. Put it together.",
+            L3: "Let's use a real-life example! 'NOT (it's sunny AND warm)' means the same as 'it's NOT sunny OR it's NOT warm.' See what happened? The **AND** changed to **OR**, and each part got a **NOT** added. That's De Morgan's rule: ¬(A ∧ B) = **¬A ∨ ¬B**. Two things change: (1) the connector flips (AND to OR), (2) each term gets negated. You're doing brilliantly, look for this pattern in the options!"
+        }
+    },
+    {
+        id: 105,
+        question: "In a directed graph, the sum of all vertex degrees is equal to:",
+        options: ["2 × |E|", "|V|", "|E|", "2 × |V|"],
+        correctAnswer: "2 × |E|",
+        difficulty: 3,
+        topic: "Graph Theory",
+        // TEST A - Generic one-liner (deliberately vague)
+        testAHint: "Consider how each edge relates to the vertices it connects.",
+        // TEST B - Three clearly different levels
+        testBHints: {
+            L1: "How does each edge contribute to the total degree count when you consider both endpoints?",
+            L2: "Every edge connects **two** vertices. It adds 1 to the degree of each endpoint, so each edge contributes exactly **2** to the total degree sum. If there are |E| edges total, what's the sum?",
+            L3: "Think of edges as **handshakes** between people (vertices). Each handshake involves exactly **2 people**, so it gets counted twice, once for each person. If there are 3 handshakes, the total count = 3 × 2 = **6**. In general: **sum of all degrees = 2 × number of edges**. This works the same way in directed graphs. So the answer is **2 × |E|**. This is called the Handshaking Lemma, and now you know it!"
+        }
+    }
+];

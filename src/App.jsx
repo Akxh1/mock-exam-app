@@ -1,8 +1,8 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { getRandomQuestions, questionBank } from './questions';
+import { getRandomQuestions, questionBank, AB_TEST_QUESTIONS } from './questions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, CheckCircle, ArrowRight, Brain, Clock, AlertCircle, Lightbulb, X, FlaskConical, ClipboardList, Target, Loader2, ArrowLeft, Star } from 'lucide-react';
 import './App.css';
@@ -1509,8 +1509,8 @@ const ABTestHub = () => {
             <motion.div className="ab-card ab-card-a" whileHover={{ y: -4 }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📝</div>
               <h3 style={{ color: '#1d4ed8' }}>TEST A</h3>
-              <p style={{ fontWeight: 600, color: '#3b82f6', marginBottom: '0.5rem' }}>Generic AI Hints</p>
-              <p>Standard one-size-fits-all hints - typical LMS experience</p>
+              <p style={{ fontWeight: 600, color: '#3b82f6', marginBottom: '0.5rem' }}>Basic Hints</p>
+              <p>Simple, general hints. Same for everyone regardless of level</p>
               <motion.button
                 className="btn-primary"
                 style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', width: '100%' }}
@@ -1526,8 +1526,8 @@ const ABTestHub = () => {
             <motion.div className="ab-card ab-card-b" whileHover={{ y: -4 }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎯</div>
               <h3 style={{ color: '#6d28d9' }}>TEST B</h3>
-              <p style={{ fontWeight: 600, color: '#7c3aed', marginBottom: '0.5rem' }}>Adaptive Scaffolding</p>
-              <p>Research-enhanced hints based on mastery level</p>
+              <p style={{ fontWeight: 600, color: '#7c3aed', marginBottom: '0.5rem' }}>Smart Hints</p>
+              <p>Hints that change based on how much help you need</p>
               <motion.button
                 className="btn-primary"
                 style={{ background: 'linear-gradient(135deg, #7c3aed, #4c1d95)', width: '100%' }}
@@ -1595,7 +1595,7 @@ const TestAExam = () => {
   const hintOpenTimeRef = useRef(null);
 
   useEffect(() => {
-    setQuestions(getRandomQuestions(5));
+    setQuestions([...AB_TEST_QUESTIONS]);
   }, []);
 
   const currentQ = questions[currentQIndex];
@@ -1610,7 +1610,7 @@ const TestAExam = () => {
     let result = await generateGenericHint(currentQ.question);
 
     if (!result) {
-      const fallbackText = currentQ.hint || "Re-read the question carefully and think about the key concept.";
+      const fallbackText = currentQ.testAHint || currentQ.hint || "Re-read the question carefully and think about the key concept.";
       result = { text: fallbackText, source: 'static_fallback', responseTime: null };
     }
 
@@ -1693,7 +1693,7 @@ const TestAExam = () => {
         <div className="card-glass" style={{ padding: '2rem' }}>
           {/* Test A Banner */}
           <div className="test-banner test-banner-a">
-            TEST A - Generic Hints
+            TEST A: Basic Hints
           </div>
 
           {/* Info Notice */}
@@ -1736,7 +1736,7 @@ const TestAExam = () => {
               style={{ opacity: hintData ? 0.6 : 1 }}
             >
               {hintLoading ? <Loader2 size={16} className="spin-animation" /> : <Lightbulb size={16} />}
-              {hintLoading ? 'Generating...' : hintData ? '✔ Hint Viewed' : '💡 Get Hint'}
+              {hintLoading ? 'Generating...' : hintData ? '✔ Hint Viewed' : '💡 Get a Hint'}
             </button>
           </div>
 
@@ -1830,16 +1830,16 @@ const TestBExam = () => {
   const hintOpenTimeRef = useRef(null);
 
   const levels = [
-    { id: 'L1', label: 'Proficient', style: 'Socratic', color: '#22c55e', description: 'Minimal Socratic prompts - you\'ll receive thought-provoking questions' },
-    { id: 'L2', label: 'Developing', style: 'Structured', color: '#f59e0b', description: 'Structured nudges with concept reminders and common pitfalls' },
-    { id: 'L3', label: 'Struggling', style: 'Guided', color: '#ef4444', description: 'Step-by-step guidance with analogies and encouragement' }
+    { id: 'L1', label: 'A Quick Nudge', style: 'Nudge', color: '#22c55e', description: 'A thought-provoking question to spark your thinking, no hand-holding' },
+    { id: 'L2', label: 'A Helpful Push', style: 'Push', color: '#f59e0b', description: 'Points you in the right direction with some detail and a first step' },
+    { id: 'L3', label: 'Full Walkthrough', style: 'Walkthrough', color: '#ef4444', description: 'Breaks it down from scratch with examples and encouragement' }
   ];
 
   const currentLevel = levels.find(l => l.id === selectedLevel);
 
   const handleStartExam = () => {
     if (!selectedLevel) return;
-    setQuestions(getRandomQuestions(5));
+    setQuestions([...AB_TEST_QUESTIONS]);
     startTimeRef.current = Date.now();
     setExamStarted(true);
   };
@@ -1855,7 +1855,8 @@ const TestBExam = () => {
     let result = await generateAdaptiveHint(currentQ.question, selectedLevel);
 
     if (!result) {
-      const fallbackText = currentQ.adaptiveHints?.[selectedLevel] ||
+      const fallbackText = currentQ.testBHints?.[selectedLevel] ||
+        currentQ.adaptiveHints?.[selectedLevel] ||
         currentQ.hint ||
         "Re-read the question carefully and think about the key concept.";
       result = { text: fallbackText, source: `structured_${selectedLevel.toLowerCase()}`, responseTime: null };
@@ -2015,7 +2016,7 @@ const TestBExam = () => {
         <div className="card-glass" style={{ padding: '2rem' }}>
           {/* Test B Banner */}
           <div className="test-banner test-banner-b">
-            TEST B - Adaptive Scaffolding ({currentLevel?.id} {currentLevel?.label})
+            TEST B: Smart Hints ({currentLevel?.label})
           </div>
 
           {/* Info Notice */}
@@ -2061,7 +2062,7 @@ const TestBExam = () => {
               style={{ opacity: hintData ? 0.6 : 1, borderColor: 'var(--ab-test-b)', color: 'var(--ab-test-b)' }}
             >
               {hintLoading ? <Loader2 size={16} className="spin-animation" /> : <Target size={16} />}
-              {hintLoading ? 'Generating...' : hintData ? '✔ Hint Viewed' : '🎯 Get Adaptive Hint'}
+              {hintLoading ? 'Generating...' : hintData ? '✔ Hint Viewed' : '🎯 Get My Hint'}
             </button>
           </div>
 
@@ -2100,7 +2101,9 @@ const TestBExam = () => {
                   color: 'var(--text-primary)',
                   borderLeft: `4px solid ${currentLevel?.color}`
                 }}>
-                  {hintData.text}
+                  {hintData.text.split(/\*\*(.*?)\*\*/g).map((part, i) =>
+                    i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+                  )}
                 </div>
               </div>
               {/* Helpfulness */}
